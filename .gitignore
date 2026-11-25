@@ -6,8 +6,7 @@ node_modules/
 # Testing & Coverage
 coverage/
 
-# Production Build
-dist/
+# Build
 build/
 
 # Python
