@@ -504,8 +504,10 @@ def get_farmer_application_outcome(app_id: int):
     conn.close()
 
     res = dict(app_row)
-    res["decision_tree_path"] = json.loads(res["decision_tree_path"]) if res.get("decision_tree_path") else []
-    res["shap_reasons"] = json.loads(res["shap_reasons"]) if res.get("shap_reasons") else []
+    dt_raw = res.get("decision_tree_path")
+    sr_raw = res.get("shap_reasons")
+    res["decision_tree_path"] = json.loads(dt_raw) if isinstance(dt_raw, str) and dt_raw else (dt_raw or [])
+    res["shap_reasons"] = json.loads(sr_raw) if isinstance(sr_raw, str) and sr_raw else (sr_raw or [])
     res["tranches"] = [dict(t) for t in tranches]
     res["grievances"] = [dict(g) for g in grievances]
     res["liabilities"] = [dict(l) for l in liabilities]

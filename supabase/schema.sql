@@ -8,7 +8,7 @@
 CREATE TABLE IF NOT EXISTS users_and_roles (
     id BIGSERIAL PRIMARY KEY,
     auth_uid UUID UNIQUE, -- Maps to Supabase auth.users(id)
-    email TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
     username TEXT UNIQUE NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('farmer', 'bank_officer', 'govt_auditor', 'admin')),
     full_name TEXT NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS dss_evaluations (
     id BIGSERIAL PRIMARY KEY,
     application_id BIGINT UNIQUE NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
     farmer_classification TEXT NOT NULL,
-    decision_tree_path JSONB NOT NULL,
+    decision_tree_path TEXT NOT NULL,
     scale_of_finance_limit DOUBLE PRECISION NOT NULL,
     sanctioned_amount DOUBLE PRECISION NOT NULL,
     pd_score DOUBLE PRECISION NOT NULL,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS dss_evaluations (
     expected_revenue DOUBLE PRECISION NOT NULL,
     drought_stress_revenue DOUBLE PRECISION NOT NULL,
     equity_priority_score DOUBLE PRECISION NOT NULL,
-    shap_reasons JSONB NOT NULL,
+    shap_reasons TEXT NOT NULL,
     allocated_in_batch BOOLEAN DEFAULT FALSE,
     evaluated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -177,6 +177,7 @@ ALTER TABLE loan_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE grievances_and_policy_logs ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated service role or demo policies
+DROP POLICY IF EXISTS "Bank & Govt Read All Applications" ON loan_applications;
 CREATE POLICY "Bank & Govt Read All Applications" ON loan_applications
     FOR SELECT USING (
         EXISTS (
@@ -185,6 +186,7 @@ CREATE POLICY "Bank & Govt Read All Applications" ON loan_applications
         )
     );
 
+DROP POLICY IF EXISTS "Farmers Read Own Applications" ON loan_applications;
 CREATE POLICY "Farmers Read Own Applications" ON loan_applications
     FOR SELECT USING (
         EXISTS (
@@ -193,3 +195,12 @@ CREATE POLICY "Farmers Read Own Applications" ON loan_applications
             WHERE fp.id = loan_applications.farmer_id AND u.auth_uid = auth.uid()
         )
     );
+
+-- Seed default RBI / Ministry policy row if empty
+INSERT INTO govt_policy_parameters (
+    smf_minimum_quota, govt_first_loss_guarantee, interest_subvention_pct,
+    miss_base_rate, collateral_free_threshold, collateral_free_tieup_threshold,
+    flexi_kcc_min, flexi_kcc_max, bank_max_npa_ceiling
+)
+SELECT 0.556, 0.35, 3.0, 7.0, 200000.0, 300000.0, 10000.0, 50000.0, 0.045
+WHERE NOT EXISTS (SELECT 1 FROM govt_policy_parameters);
