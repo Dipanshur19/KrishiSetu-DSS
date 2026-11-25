@@ -1,23 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  RefreshCw,
-  Globe,
-  BookOpen,
-  Building2,
-  Landmark,
-  Sprout,
-  KeyRound,
-  LogOut,
-  X,
-} from "lucide-react";
+import { RefreshCw, Globe, User, X, Check, Info } from "lucide-react";
 import { AuthSession, DemoUser, Language } from "@/types/dss";
 import { t } from "@/i18n/translations";
 
 interface HeaderProps {
-  activeRole: "farmer" | "bank" | "govt" | "guide";
-  setActiveRole: (role: "farmer" | "bank" | "govt" | "guide") => void;
+  activeRole: "farmer" | "bank" | "govt";
+  setActiveRole: (role: "farmer" | "bank" | "govt") => void;
   selectedDemoUser: DemoUser | null;
   setSelectedDemoUser: (u: DemoUser) => void;
   demoUsers: DemoUser[];
@@ -28,6 +18,7 @@ interface HeaderProps {
   authSession: AuthSession | null;
   onLoginDemo: (email: string) => Promise<void>;
   onLogout: () => void;
+  onOpenSystemInfo: () => void;
 }
 
 export default function Header({
@@ -43,255 +34,193 @@ export default function Header({
   authSession,
   onLoginDemo,
   onLogout,
+  onOpenSystemInfo,
 }: HeaderProps) {
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("farmer@demo");
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState("");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const handleLogin = async (emailToUse: string) => {
-    setLoginLoading(true);
-    setLoginError("");
+  const handleQuickLogin = async (email: string) => {
+    setLoggingIn(true);
     try {
-      await onLoginDemo(emailToUse);
-      setLoginOpen(false);
-    } catch (e: unknown) {
-      setLoginError(e instanceof Error ? e.message : "Authentication failed");
+      await onLoginDemo(email);
+      setAccountMenuOpen(false);
     } finally {
-      setLoginLoading(false);
+      setLoggingIn(false);
     }
   };
 
+  const activeName = authSession?.user.full_name || selectedDemoUser?.full_name || "Ram Charan Yadav";
+  const initials = activeName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase();
+
   return (
-    <>
-      <header className="bg-slate-900 border-b border-slate-800 text-slate-100 sticky top-0 z-40">
-        {/* Institutional Micro-Bar */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-wrap items-center justify-between text-xs text-slate-400 border-b border-slate-800/80">
-          <div className="flex items-center space-x-3">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
-              DMS624 • Next.js + FastAPI + XGBoost/SHAP + SciPy MILP
-            </span>
-            <span className="hidden md:inline text-slate-400">
-              IIT Kanpur • RBI PSL & KCC Framework • Open-Meteo + Supabase Ready
-            </span>
+    <header className="sticky top-0 z-40 bg-[#f5f5ee]/90 backdrop-blur-md border-b border-black/[0.06]">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        {/* Minimal Brand Mark (Dark circular badge + lime leaf geometry, matching reference) */}
+        <div className="flex items-center space-x-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-full bg-[#141513] flex items-center justify-center">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none">
+              <path
+                d="M12 4C8.5 4 6 6.8 6 10.5C6 14.5 9.5 18 12 20C14.5 18 18 14.5 18 10.5C18 6.8 15.5 4 12 4Z"
+                fill="#b8e354"
+              />
+              <path d="M12 8V17M12 12L15 9.5" stroke="#141513" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
           </div>
+          <span className="text-base font-medium tracking-tight text-[#141513]">
+            {t(lang, "brand")}
+          </span>
+        </div>
 
-          <div className="flex items-center space-x-3">
-            <span className="text-slate-300 hidden sm:inline">
-              {t(lang, "glc_target")}{" "}
-              <strong className="text-emerald-400 font-mono">₹32.50 Lakh Cr</strong>
+        {/* Centered Navigation Tabs (Solid Obsidian active pill, quiet inactive text) */}
+        <nav className="flex items-center gap-1 sm:gap-2">
+          {(["farmer", "bank", "govt"] as const).map((roleKey) => {
+            const isActive = activeRole === roleKey;
+            const label =
+              roleKey === "farmer"
+                ? t(lang, "nav_farmer")
+                : roleKey === "bank"
+                ? t(lang, "nav_bank")
+                : t(lang, "nav_govt");
+            return (
+              <button
+                key={roleKey}
+                onClick={() => setActiveRole(roleKey)}
+                className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap ${
+                  isActive
+                    ? "bg-[#141513] text-white"
+                    : "text-[#5e5c55] hover:text-[#141513] hover:bg-black/[0.04]"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Right Icon Utility Cluster + Profile Switcher */}
+        <div className="flex items-center space-x-2 shrink-0 relative">
+          <button
+            onClick={() => setLang(lang === "en" ? "hi" : "en")}
+            className="h-9 px-3 rounded-full bg-white border border-black/[0.08] text-xs font-medium text-[#141513] hover:bg-[#fafaf6] flex items-center space-x-1.5 transition-colors"
+            title="Switch Language"
+          >
+            <Globe className="w-3.5 h-3.5 text-[#5e5c55]" strokeWidth={1.5} />
+            <span>{lang === "en" ? "EN" : "HI"}</span>
+          </button>
+
+          <button
+            onClick={onResetData}
+            disabled={isResetting}
+            className="w-9 h-9 rounded-full bg-white border border-black/[0.08] flex items-center justify-center text-[#5e5c55] hover:text-[#141513] hover:bg-[#fafaf6] transition-colors"
+            title="Reset sample data"
+          >
+            <RefreshCw className={`w-4 h-4 ${isResetting ? "animate-spin text-[#4d7c0f]" : ""}`} strokeWidth={1.5} />
+          </button>
+
+          <button
+            onClick={onOpenSystemInfo}
+            className="w-9 h-9 rounded-full bg-white border border-black/[0.08] hidden sm:flex items-center justify-center text-[#5e5c55] hover:text-[#141513] hover:bg-[#fafaf6] transition-colors"
+            title="System info & methodology"
+          >
+            <Info className="w-4 h-4" strokeWidth={1.5} />
+          </button>
+
+          {/* Avatar / Persona Trigger */}
+          <button
+            onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+            className="h-9 pl-1.5 pr-3 rounded-full bg-white border border-black/[0.08] flex items-center space-x-2 hover:bg-[#fafaf6] transition-colors"
+            title="Switch account or demo persona"
+          >
+            <div className="w-6 h-6 rounded-full bg-[#141513] text-[#d4f04c] text-[10px] font-medium flex items-center justify-center">
+              {initials || <User className="w-3.5 h-3.5" />}
+            </div>
+            <span className="hidden md:inline text-xs font-medium text-[#141513] max-w-[120px] truncate">
+              {activeName.split(" ")[0]}
             </span>
+          </button>
 
-            {/* Auth Session Badge or Demo Login Button */}
-            {authSession ? (
-              <div className="flex items-center space-x-2 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[11px] text-slate-200 font-mono">{authSession.email}</span>
-                <button
-                  onClick={onLogout}
-                  className="text-slate-400 hover:text-white"
-                  title="Sign out"
-                >
-                  <LogOut className="w-3 h-3" />
+          {/* Account & Persona Popover */}
+          {accountMenuOpen && (
+            <div className="absolute right-0 top-12 w-72 bg-white rounded-2xl border border-black/[0.08] shadow-lg p-3 space-y-3 z-50">
+              <div className="flex items-center justify-between px-1 pb-2 border-b border-black/[0.06]">
+                <span className="text-xs font-medium text-[#141513]">Account & Persona</span>
+                <button onClick={() => setAccountMenuOpen(false)} className="text-[#8a877d] hover:text-[#141513]">
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setLoginOpen(true)}
-                className="flex items-center space-x-1 px-2 py-0.5 rounded bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-700 transition-colors"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span className="font-medium">{t(lang, "login_btn")}</span>
-              </button>
-            )}
 
-            <button
-              onClick={() => setLang(lang === "en" ? "hi" : "en")}
-              className="flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
-              title="Toggle Language (English / Hindi)"
-            >
-              <Globe className="w-3.5 h-3.5 text-slate-300" />
-              <span className="font-medium">{lang === "en" ? "हिन्दी (Hindi)" : "English"}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Main Nav Row */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            {/* Logo */}
-            <div className="flex items-center space-x-2.5 shrink-0">
-              <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
-                <Sprout className="w-5 h-5 text-white" strokeWidth={1.75} />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-base font-bold tracking-tight text-white">
-                    {t(lang, "app_title")}
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                    v3.0 TS
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 max-w-[230px] truncate" title={t(lang, "app_subtitle")}>
-                  {t(lang, "app_subtitle")}
-                </p>
-              </div>
-            </div>
-
-            {/* Role Tabs */}
-            <nav className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => setActiveRole("farmer")}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  activeRole === "farmer"
-                    ? "bg-emerald-700 text-white"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                <Sprout className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>{t(lang, "nav_farmer")}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveRole("bank")}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  activeRole === "bank"
-                    ? "bg-blue-700 text-white"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>{t(lang, "nav_bank")}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveRole("govt")}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  activeRole === "govt"
-                    ? "bg-amber-700 text-white"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                <Landmark className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>{t(lang, "nav_govt")}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveRole("guide")}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  activeRole === "guide"
-                    ? "bg-slate-700 text-white"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>{t(lang, "nav_guide")}</span>
-              </button>
-            </nav>
-
-            {/* Persona Switcher & Reset */}
-            <div className="flex items-center space-x-2 shrink-0">
-              <select
-                value={selectedDemoUser?.username || ""}
-                onChange={(e) => {
-                  const u = demoUsers.find((x) => x.username === e.target.value);
-                  if (u) {
-                    setSelectedDemoUser(u);
-                    if (u.role === "farmer") setActiveRole("farmer");
-                    else if (u.role === "bank_officer") setActiveRole("bank");
-                    else if (u.role === "govt_auditor") setActiveRole("govt");
-                  }
-                }}
-                className="text-xs bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer max-w-[180px]"
-                title="Switch Demo Persona"
-              >
-                <option value="" disabled>
-                  Select Demo Persona...
-                </option>
-                {demoUsers.map((u) => (
-                  <option key={u.username} value={u.username}>
-                    [{u.role === "farmer" ? "Farmer" : u.role === "bank_officer" ? "Bank" : "Govt"}] {u.full_name}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={onResetData}
-                disabled={isResetting}
-                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-md border border-slate-700 transition-colors"
-                title="Reseed 160 farmer credit records"
-              >
-                <RefreshCw className={`w-4 h-4 ${isResetting ? "animate-spin text-emerald-400" : ""}`} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* RBAC Demo Login Modal (Week 4 accounts: farmer@demo, bank@demo, govt@demo) */}
-      {loginOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center space-x-2">
-                <KeyRound className="w-4 h-4 text-emerald-700" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Role-Based Access Control (Supabase RBAC)
-                </h3>
-              </div>
-              <button onClick={() => setLoginOpen(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <p className="text-xs text-slate-600">
-                Sign in with any of the three DMS624 demo accounts or a Supabase user account:
-              </p>
-
-              <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <div className="text-[11px] text-[#8a877d] px-1">Role access</div>
                 {[
-                  { email: "farmer@demo", label: "Farmer", sub: "farmer@demo" },
-                  { email: "bank@demo", label: "Bank Officer", sub: "bank@demo" },
-                  { email: "govt@demo", label: "Govt Auditor", sub: "govt@demo" },
-                ].map((acc) => (
-                  <button
-                    key={acc.email}
-                    onClick={() => handleLogin(acc.email)}
-                    disabled={loginLoading}
-                    className="p-2.5 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 text-left transition-colors"
-                  >
-                    <div className="text-xs font-bold text-slate-900">{acc.label}</div>
-                    <div className="text-[11px] font-mono text-slate-500">{acc.sub}</div>
-                  </button>
-                ))}
+                  { email: "farmer@demo", label: "Farmer Portal", desc: "farmer@demo" },
+                  { email: "bank@demo", label: "Bank Officer", desc: "bank@demo" },
+                  { email: "govt@demo", label: "Policy Auditor", desc: "govt@demo" },
+                ].map((acc) => {
+                  const active = authSession?.email === acc.email;
+                  return (
+                    <button
+                      key={acc.email}
+                      disabled={loggingIn}
+                      onClick={() => handleQuickLogin(acc.email)}
+                      className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors ${
+                        active ? "bg-[#f5f5ee] text-[#141513] font-medium" : "hover:bg-[#fafaf6] text-[#5e5c55]"
+                      }`}
+                    >
+                      <div>
+                        <div className="text-[#141513] font-medium">{acc.label}</div>
+                        <div className="text-[11px] font-mono text-[#8a877d]">{acc.desc}</div>
+                      </div>
+                      {active && <Check className="w-3.5 h-3.5 text-[#4d7c0f]" />}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="pt-2 border-t border-slate-200 space-y-2">
-                <label className="block text-xs font-semibold text-slate-700">Account Email</label>
-                <div className="flex space-x-2">
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-md font-mono"
-                    placeholder="farmer@demo"
-                  />
-                  <button
-                    onClick={() => handleLogin(loginEmail)}
-                    disabled={loginLoading}
-                    className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-xs font-semibold"
-                  >
-                    {loginLoading ? "Signing in..." : "Sign In"}
-                  </button>
-                </div>
-                {loginError && <p className="text-xs text-red-600">{loginError}</p>}
+              <div className="pt-2 border-t border-black/[0.06] space-y-1.5">
+                <div className="text-[11px] text-[#8a877d] px-1">Sample applicant profile</div>
+                <select
+                  value={selectedDemoUser?.username || ""}
+                  onChange={(e) => {
+                    const u = demoUsers.find((x) => x.username === e.target.value);
+                    if (u) {
+                      setSelectedDemoUser(u);
+                      if (u.role === "farmer") setActiveRole("farmer");
+                      else if (u.role === "bank_officer") setActiveRole("bank");
+                      else if (u.role === "govt_auditor") setActiveRole("govt");
+                      setAccountMenuOpen(false);
+                    }
+                  }}
+                  className="w-full text-xs bg-[#fafaf6] border border-black/[0.08] rounded-lg px-2.5 py-2 text-[#141513]"
+                >
+                  {demoUsers.map((u) => (
+                    <option key={u.username} value={u.username}>
+                      {u.full_name} ({u.district})
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {authSession && (
+                <button
+                  onClick={() => {
+                    onLogout();
+                    setAccountMenuOpen(false);
+                  }}
+                  className="w-full py-1.5 text-xs text-[#8a877d] hover:text-[#141513] border-t border-black/[0.06] pt-2"
+                >
+                  Sign out ({authSession.email})
+                </button>
+              )}
             </div>
-          </div>
+          )}
         </div>
-      )}
-    </>
+      </div>
+    </header>
   );
 }

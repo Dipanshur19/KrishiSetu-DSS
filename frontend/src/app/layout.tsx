@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+  weight: ["400", "500", "600"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "KrishiSetu DSS • Computer Aided Decision System (DMS624)",
+  title: "KrishiSetu — Agricultural Credit & Risk Intelligence",
   description:
-    "Three-sided agricultural credit Computer Aided Decision System resolving Government welfare mandates and Bank risk aversion (IIT Kanpur DMS624).",
+    "Equitable agricultural credit underwriting, agronomic cash-flow forecasting, and priority lending optimization.",
 };
 
 export default function RootLayout({
@@ -26,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body className="bg-slate-100 text-slate-900 antialiased min-h-screen">
+    <html lang="en" className={`${plusJakarta.variable} ${jetbrainsMono.variable}`}>
+      <body className="bg-[#f5f5ee] text-[#141513] antialiased min-h-screen">
         {children}
       </body>
     </html>

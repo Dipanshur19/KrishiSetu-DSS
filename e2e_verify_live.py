@@ -41,7 +41,7 @@ def run_e2e_tests():
     total += 1
     st, res = request("GET", "/")
     assert st == 200, f"Expected 200, got {st}"
-    assert "KrishiSetu DSS" in res
+    assert "KrishiSetu" in res
     assert "_next/static" in res, "Expected Next.js static assets in HTML"
     print("✓ [TEST 1] Root serves Next.js TypeScript production build (_next/static).")
     passed += 1

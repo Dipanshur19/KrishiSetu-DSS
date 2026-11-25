@@ -5,18 +5,19 @@ import Header from "@/components/Header";
 import FarmerPortal from "@/components/FarmerPortal";
 import BankWorkbench from "@/components/BankWorkbench";
 import GovtConsole from "@/components/GovtConsole";
-import CourseGuide from "@/components/CourseGuide";
+import SystemInfoModal from "@/components/SystemInfoModal";
 import { api } from "@/lib/api";
 import { AuthSession, DemoUser, Language } from "@/types/dss";
 
 export default function HomePage() {
-  const [activeRole, setActiveRole] = useState<"farmer" | "bank" | "govt" | "guide">("farmer");
+  const [activeRole, setActiveRole] = useState<"farmer" | "bank" | "govt">("farmer");
   const [lang, setLang] = useState<Language>("en");
   const [demoUsers, setDemoUsers] = useState<DemoUser[]>([]);
   const [selectedDemoUser, setSelectedDemoUser] = useState<DemoUser | null>(null);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [systemInfoOpen, setSystemInfoOpen] = useState(false);
 
   useEffect(() => {
     api.getDemoAccounts()
@@ -29,7 +30,7 @@ export default function HomePage() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(""), 4000);
+    setTimeout(() => setToastMessage(""), 3500);
   };
 
   const handleLoginDemo = async (email: string) => {
@@ -38,20 +39,20 @@ export default function HomePage() {
     if (res.user.role === "farmer") setActiveRole("farmer");
     else if (res.user.role === "bank_officer") setActiveRole("bank");
     else if (res.user.role === "govt_auditor") setActiveRole("govt");
-    showToast(`Signed in as ${res.user.full_name} (${res.email})`);
+    showToast(`Signed in as ${res.user.full_name}`);
   };
 
   const handleLogout = () => {
     setAuthSession(null);
-    showToast("Signed out of demo session");
+    showToast("Signed out");
   };
 
   const handleResetData = async () => {
-    if (!window.confirm("Reseed database with 160 realistic Indian farmer credit records?")) return;
+    if (!window.confirm("Reset database to default 160 sample applications?")) return;
     setIsResetting(true);
     try {
       const res = await api.resetDatabase();
-      showToast(res.message || "Database reset successfully.");
+      showToast(res.message || "Sample data reset");
       const users = await api.getDemoAccounts();
       setDemoUsers(users);
     } catch (err: unknown) {
@@ -62,7 +63,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900">
+    <div className="min-h-screen bg-[#f5f5ee] flex flex-col text-[#141513]">
       <Header
         activeRole={activeRole}
         setActiveRole={setActiveRole}
@@ -76,11 +77,12 @@ export default function HomePage() {
         authSession={authSession}
         onLoginDemo={handleLoginDemo}
         onLogout={handleLogout}
+        onOpenSystemInfo={() => setSystemInfoOpen(true)}
       />
 
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-lg shadow-xl border border-slate-700 text-xs flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+        <div className="fixed bottom-5 right-5 z-50 bg-[#141513] text-white px-4 py-2.5 rounded-full shadow-lg text-xs flex items-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-[#b8e354]" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -89,22 +91,9 @@ export default function HomePage() {
         {activeRole === "farmer" && <FarmerPortal demoUser={selectedDemoUser} lang={lang} />}
         {activeRole === "bank" && <BankWorkbench demoUser={selectedDemoUser} lang={lang} />}
         {activeRole === "govt" && <GovtConsole demoUser={selectedDemoUser} lang={lang} />}
-        {activeRole === "guide" && <CourseGuide />}
       </main>
 
-      <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 text-xs py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div>
-            <span className="font-semibold text-slate-300">KrishiSetu DSS</span> • Computer Aided Decision System (DMS624)
-            <div className="text-[11px] text-slate-500 mt-0.5">
-              IIT Kanpur • RBI Priority Sector Lending & KCC Framework
-            </div>
-          </div>
-          <div className="text-[11px] text-slate-500 font-mono">
-            Next.js TS + Recharts + Leaflet • FastAPI + XGBoost/SHAP + SciPy MILP • Open-Meteo + Supabase
-          </div>
-        </div>
-      </footer>
+      <SystemInfoModal isOpen={systemInfoOpen} onClose={() => setSystemInfoOpen(false)} />
     </div>
   );
 }

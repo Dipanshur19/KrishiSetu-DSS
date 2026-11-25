@@ -1,20 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  Building2,
-  Search,
-  CheckCircle2,
-  Sliders,
-  Play,
-  TrendingUp,
-  Scale,
-  Gauge,
-  Activity,
-  CloudRain,
-} from "lucide-react";
+import { Search, Play, ArrowUpRight, CheckCircle2 } from "lucide-react";
 import {
   ResponsiveContainer,
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   XAxis,
@@ -25,6 +16,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import DecisionTreeModal from "./DecisionTreeModal";
+import ClimateGaugeCard from "./ClimateGaugeCard";
 import { api } from "@/lib/api";
 import { t } from "@/i18n/translations";
 import {
@@ -47,11 +39,9 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   const [applications, setApplications] = useState<BankApplicationRow[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
   const [selectedAppDetail, setSelectedAppDetail] = useState<FarmerApplicationOutcome | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [districtFilter, setDistrictFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [budgetSlider, setBudgetSlider] = useState(5000000);
@@ -73,7 +63,6 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
     api.getBankApplications({
       district: districtFilter,
       category: categoryFilter,
-      status: statusFilter,
       search: searchQuery,
     })
       .then((data) => {
@@ -87,23 +76,17 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   };
 
   const loadApplicationDetail = (appId: number) => {
-    setLoadingDetail(true);
-    api.getApplicationOutcome(appId)
-      .then((d) => setSelectedAppDetail(d))
-      .catch(console.error)
-      .finally(() => setLoadingDetail(false));
+    api.getApplicationOutcome(appId).then(setSelectedAppDetail).catch(console.error);
   };
 
   const fetchGrievances = () => {
-    api.getBankGrievances()
-      .then((d) => setBankGrievances(d))
-      .catch(console.error);
+    api.getBankGrievances().then(setBankGrievances).catch(console.error);
   };
 
   useEffect(() => {
     fetchApplications();
     fetchGrievances();
-  }, [districtFilter, categoryFilter, statusFilter, searchQuery]);
+  }, [districtFilter, categoryFilter, searchQuery]);
 
   const handleRunOptimizer = async () => {
     setOptimizing(true);
@@ -118,7 +101,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
       });
       setOptResult(data);
     } catch (err: unknown) {
-      alert("Optimization failed: " + (err instanceof Error ? err.message : "Error"));
+      alert(err instanceof Error ? err.message : "Optimization failed");
     } finally {
       setOptimizing(false);
     }
@@ -128,10 +111,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
     if (!optResult?.dss_allocated_ids?.length) return;
     setDisbursing(true);
     try {
-      const data = await api.disburseBatch(
-        optResult.dss_allocated_ids,
-        `Batch sanctioned under RBI PSL optimization with ${fldgSlider}% Govt FLDG.`
-      );
+      const data = await api.disburseBatch(optResult.dss_allocated_ids);
       setDisburseSuccess(data.message);
       fetchApplications();
     } catch (err: unknown) {
@@ -143,122 +123,87 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
   const handleResolveGrievance = async (id: number) => {
     if (!responseText) return;
-    try {
-      await api.resolveBankGrievance(id, responseText, "resolved");
-      setRespondingId(null);
-      setResponseText("");
-      fetchGrievances();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed");
-    }
+    await api.resolveBankGrievance(id, responseText, "resolved");
+    setRespondingId(null);
+    setResponseText("");
+    fetchGrievances();
   };
 
-  // Recharts Dataset 1: Cash Flow & Drought Stress Forecast
-  const forecastChartData = selectedAppDetail
+  // Smooth Cash-Flow AreaChart for Bank Inspector
+  const cashflowCurveData = selectedAppDetail
     ? [
-        {
-          scenario: "Normal Harvest",
-          amount: Math.round(selectedAppDetail.expected_revenue || 0),
-          fill: "#047857",
-        },
-        {
-          scenario: "Drought (-35%)",
-          amount: Math.round(selectedAppDetail.drought_stress_revenue || 0),
-          fill: "#d97706",
-        },
-        {
-          scenario: "Debt Service (4%)",
-          amount: Math.round((selectedAppDetail.sanctioned_amount || 0) * 1.04),
-          fill: "#1e3a8a",
-        },
+        { phase: "Q1", harvest: Math.round(selectedAppDetail.expected_revenue * 0.15), stress: Math.round(selectedAppDetail.drought_stress_revenue * 0.1) },
+        { phase: "Q2", harvest: Math.round(selectedAppDetail.expected_revenue * 0.42), stress: Math.round(selectedAppDetail.drought_stress_revenue * 0.35) },
+        { phase: "Q3", harvest: Math.round(selectedAppDetail.expected_revenue * 0.78), stress: Math.round(selectedAppDetail.drought_stress_revenue * 0.65) },
+        { phase: "Harvest", harvest: Math.round(selectedAppDetail.expected_revenue), stress: Math.round(selectedAppDetail.drought_stress_revenue) },
       ]
     : [];
 
-  // Recharts Dataset 2: SHAP Risk Contributions
   const shapChartData = (selectedAppDetail?.shap_reasons || []).map((item) => ({
     name: item.name,
     delta: item.delta_pd_pct,
   }));
 
-  // Recharts Dataset 3: Pure Profit vs Equitable DSS Comparison
   const optimizerChartData = optResult
     ? [
-        {
-          metric: "SMF Share %",
-          DSS: optResult.metrics.equitable_dss.smf_share_pct,
-          PureProfit: optResult.metrics.pure_profit.smf_share_pct,
-        },
-        {
-          metric: "Weaker Share %",
-          DSS: optResult.metrics.equitable_dss.weaker_share_pct,
-          PureProfit: optResult.metrics.pure_profit.weaker_share_pct,
-        },
-        {
-          metric: "Net NPA % (x10)",
-          DSS: Number((optResult.metrics.equitable_dss.portfolio_npa_pct * 10).toFixed(1)),
-          PureProfit: Number((optResult.metrics.pure_profit.portfolio_npa_pct * 10).toFixed(1)),
-        },
+        { metric: "SMF %", DSS: optResult.metrics.equitable_dss.smf_share_pct, PureProfit: optResult.metrics.pure_profit.smf_share_pct },
+        { metric: "Weaker %", DSS: optResult.metrics.equitable_dss.weaker_share_pct, PureProfit: optResult.metrics.pure_profit.weaker_share_pct },
+        { metric: "NPA (x10)", DSS: Number((optResult.metrics.equitable_dss.portfolio_npa_pct * 10).toFixed(1)), PureProfit: Number((optResult.metrics.pure_profit.portfolio_npa_pct * 10).toFixed(1)) },
       ]
     : [];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 gap-4">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
-            <Building2 className="w-6 h-6 text-blue-700" strokeWidth={1.5} />
-            <span>{t(lang, "bank_title")}</span>
+          <p className="text-xs text-[#8a877d]">{t(lang, "bank_eyebrow")}</p>
+          <h1 className="text-3xl font-medium tracking-tight text-[#141513] mt-0.5">
+            {t(lang, "bank_title")}
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5">{t(lang, "bank_sub")}</p>
         </div>
 
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab("dossier")}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap ${
-              activeTab === "dossier" ? "bg-white text-blue-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            1. Unified Application Dossier
-          </button>
-          <button
-            onClick={() => setActiveTab("optimizer")}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap ${
-              activeTab === "optimizer" ? "bg-white text-blue-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            2. Constrained Portfolio Optimizer (MILP)
-          </button>
-          <button
-            onClick={() => setActiveTab("grievances")}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap ${
-              activeTab === "grievances" ? "bg-white text-blue-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            3. Grievance Queue ({bankGrievances.length})
-          </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { key: "dossier", label: "Dossier" },
+            { key: "optimizer", label: "Portfolio Optimizer" },
+            { key: "grievances", label: `Appeals (${bankGrievances.length})` },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as "dossier" | "optimizer" | "grievances")}
+              className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "bg-[#141513] text-white"
+                  : "bg-white border border-black/[0.08] text-[#5e5c55] hover:text-[#141513]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* TAB 1: UNIFIED DOSSIER & RECHARTS MODEL INSPECTOR */}
+      {/* TAB 1: DOSSIER & BENTO INSPECTOR */}
       {activeTab === "dossier" && (
-        <div className="space-y-4">
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center space-x-1.5">
-                <Search className="w-3.5 h-3.5 text-slate-400" />
+        <div className="space-y-5">
+          {/* Quiet Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center space-x-2 bg-white border border-black/[0.08] rounded-full px-3.5 py-1.5">
+                <Search className="w-3.5 h-3.5 text-[#8a877d]" />
                 <input
                   type="text"
-                  placeholder="Search farmer, KCC no..."
+                  placeholder="Search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="px-2.5 py-1.5 border border-slate-300 rounded-md w-48 text-xs"
+                  className="text-xs bg-transparent focus:outline-none w-36 text-[#141513]"
                 />
               </div>
+
               <select
                 value={districtFilter}
                 onChange={(e) => setDistrictFilter(e.target.value)}
-                className="px-2 py-1.5 border border-slate-300 rounded-md bg-white text-xs"
+                className="px-3.5 py-1.5 bg-white border border-black/[0.08] rounded-full text-xs text-[#141513]"
               >
                 <option value="All">All Districts</option>
                 <option value="Kanpur Dehat">Kanpur Dehat</option>
@@ -269,51 +214,40 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                 <option value="Barabanki">Barabanki</option>
                 <option value="Fatehpur">Fatehpur</option>
               </select>
+
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-2 py-1.5 border border-slate-300 rounded-md bg-white text-xs"
+                className="px-3.5 py-1.5 bg-white border border-black/[0.08] rounded-full text-xs text-[#141513]"
               >
                 <option value="All">All Farmers</option>
-                <option value="Marginal">Marginal (&le; 1 ha)</option>
-                <option value="Small">Small (1–2 ha)</option>
-                <option value="Other">Other (&gt; 2 ha)</option>
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-2 py-1.5 border border-slate-300 rounded-md bg-white text-xs"
-              >
-                <option value="All">All Statuses</option>
-                <option value="submitted">Submitted</option>
-                <option value="approved">Approved</option>
+                <option value="Marginal">Marginal</option>
+                <option value="Small">Small</option>
+                <option value="Other">Other</option>
               </select>
             </div>
-            <div className="text-slate-500 font-mono">
-              Showing <strong>{applications.length}</strong> Applications
-            </div>
+
+            <span className="text-xs font-mono text-[#8a877d]">{applications.length} applications</span>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto max-h-[720px] overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Applicant Ledger (6 cols) */}
+            <div className="lg:col-span-6 bento-card overflow-hidden">
+              <div className="overflow-x-auto max-h-[680px] overflow-y-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10">
+                  <thead className="bg-[#fafaf6] border-b border-black/[0.06] text-[#8a877d] font-medium sticky top-0 z-10">
                     <tr>
-                      <th className="px-3 py-2.5">Farmer & UID</th>
-                      <th className="px-3 py-2.5">Land & Crop</th>
-                      <th className="px-3 py-2.5">Requested</th>
-                      <th className="px-3 py-2.5">Category</th>
-                      <th className="px-3 py-2.5 text-center">XGBoost PD</th>
-                      <th className="px-3 py-2.5">Status</th>
+                      <th className="px-4 py-3 font-medium">Applicant</th>
+                      <th className="px-3 py-3 font-medium">Crop</th>
+                      <th className="px-3 py-3 font-medium text-right">Amount</th>
+                      <th className="px-3 py-3 font-medium text-right">PD</th>
+                      <th className="px-4 py-3 font-medium text-right">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-black/[0.05]">
                     {loadingApps ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400">
-                          Loading applications...
-                        </td>
+                        <td colSpan={5} className="py-10 text-center text-[#8a877d]">Loading...</td>
                       </tr>
                     ) : (
                       applications.map((app) => {
@@ -324,46 +258,28 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                             key={app.id}
                             onClick={() => loadApplicationDetail(app.id)}
                             className={`cursor-pointer transition-colors ${
-                              isSelected ? "bg-blue-50/80 font-medium" : "hover:bg-slate-50"
+                              isSelected ? "bg-[#f3f6ea]" : "hover:bg-[#fafaf6]"
                             }`}
                           >
-                            <td className="px-3 py-2.5">
-                              <div className="font-bold text-slate-900">{app.full_name}</div>
-                              <div className="text-[10px] text-slate-500 font-mono">
-                                {app.district} • {app.social_category}
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-[#141513]">{app.full_name}</div>
+                              <div className="text-[11px] text-[#8a877d]">
+                                {app.district} · {app.farmer_classification}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5">
-                              <div>{app.primary_crop}</div>
-                              <div className="text-[10px] text-slate-500">
-                                {app.area_acres} ac ({app.irrigation_source})
-                              </div>
+                            <td className="px-3 py-3 text-[#5e5c55]">
+                              {app.primary_crop} · {app.area_acres} ac
                             </td>
-                            <td className="px-3 py-2.5 font-mono">
+                            <td className="px-3 py-3 text-right font-mono text-[#141513]">
                               ₹{Number(app.requested_amount || 0).toLocaleString("en-IN")}
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-3 py-3 text-right font-mono text-[#5e5c55]">{pdPct}%</td>
+                            <td className="px-4 py-3 text-right">
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  app.farmer_classification === "Marginal"
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-slate-100 text-slate-700"
-                                }`}
-                              >
-                                {app.farmer_classification}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2.5 text-center font-mono font-semibold">
-                              <span className={parseFloat(pdPct) > 15 ? "text-amber-700" : "text-emerald-700"}>
-                                {pdPct}%
-                              </span>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold capitalize ${
+                                className={`px-2 py-0.5 rounded-full text-[11px] capitalize ${
                                   app.status === "approved"
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-amber-100 text-amber-800"
+                                    ? "bg-[#eef7d6] text-[#365314]"
+                                    : "bg-[#f5f5ee] text-[#5e5c55]"
                                 }`}
                               >
                                 {app.status}
@@ -378,208 +294,149 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
               </div>
             </div>
 
-            {/* Model Inspector Panel with Real Recharts */}
-            <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-              {loadingDetail ? (
-                <div className="py-20 text-center text-slate-400">Loading model inspection...</div>
-              ) : selectedAppDetail ? (
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between border-b border-slate-200 pb-3">
-                    <div>
+            {/* Right Model Inspector Bento Stack (6 cols) */}
+            <div className="lg:col-span-6 space-y-5">
+              {selectedAppDetail && (
+                <>
+                  {/* Card 1: Cash-Flow AreaChart */}
+                  <div className="bento-card p-5 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-xs text-[#8a877d]">
+                          {selectedAppDetail.application_no} · {selectedAppDetail.district}
+                        </div>
+                        <h3 className="text-lg font-medium text-[#141513] mt-0.5">
+                          {selectedAppDetail.full_name}
+                        </h3>
+                      </div>
+
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-mono font-bold">
-                          {selectedAppDetail.application_no}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {selectedAppDetail.facility_type}
-                        </span>
+                        {selectedAppDetail.status !== "approved" && (
+                          <button
+                            onClick={() => {
+                              api.disburseBatch([selectedAppDetail.id]).then(() => {
+                                fetchApplications();
+                                loadApplicationDetail(selectedAppDetail.id);
+                              });
+                            }}
+                            className="px-3.5 py-1.5 rounded-full bg-[#141513] text-[#d4f04c] text-xs font-medium hover:bg-black/85"
+                          >
+                            Approve ₹{Number(selectedAppDetail.sanctioned_amount).toLocaleString("en-IN")}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setIsDecisionTreeOpen(true)}
+                          className="w-8 h-8 rounded-full border border-black/[0.08] flex items-center justify-center text-[#5e5c55] hover:text-[#141513]"
+                          title="Inspect Decision Tree"
+                        >
+                          <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
+                        </button>
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900 mt-1">{selectedAppDetail.full_name}</h3>
-                      <p className="text-xs text-slate-500">
-                        {selectedAppDetail.village}, {selectedAppDetail.district} • {selectedAppDetail.social_category}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setIsDecisionTreeOpen(true)}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center space-x-1"
-                    >
-                      <Scale className="w-3.5 h-3.5 text-blue-700" />
-                      <span>Decision Tree</span>
-                    </button>
-                  </div>
-
-                  {/* Consolidated 3-Bank Signals */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
-                      <span className="text-[10px] text-slate-500 block">Axis Resilience</span>
-                      <strong className="text-slate-800">{selectedAppDetail.irrigation_source}</strong>
-                      <span className="text-[10px] text-slate-500 block">
-                        {selectedAppDetail.distance_to_mandi_km}km Mandi
-                      </span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
-                      <span className="text-[10px] text-slate-500 block">SBI Allied Cash</span>
-                      <strong className="text-slate-800">{selectedAppDetail.livestock_count} Dairy</strong>
-                      <span className="text-[10px] text-emerald-700 block">+₹35k/head norm</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
-                      <span className="text-[10px] text-slate-500 block">BOI Net Worth</span>
-                      <strong className="text-slate-800 font-mono">
-                        ₹{Number(selectedAppDetail.net_worth || 0).toLocaleString("en-IN")}
-                      </strong>
-                      <span className="text-[10px] text-slate-500 block">K+L-M Formula</span>
-                    </div>
-                  </div>
-
-                  {/* Recharts Chart 1: Crop Revenue vs Drought Stress */}
-                  <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700 flex items-center space-x-1.5">
-                        <TrendingUp className="w-3.5 h-3.5 text-blue-700" />
-                        <span>Revenue & Open-Meteo Stress Test</span>
-                      </span>
-                      <span className="font-mono font-bold text-emerald-700 flex items-center space-x-1">
-                        <Gauge className="w-3.5 h-3.5" />
-                        <span>DSCR: {selectedAppDetail.dscr_ratio}x</span>
-                      </span>
                     </div>
 
-                    {selectedAppDetail.weather_profile && (
-                      <div className="text-[11px] text-slate-500 flex items-center space-x-1.5">
-                        <CloudRain className="w-3.5 h-3.5 text-blue-600" />
-                        <span>
-                          Live Open-Meteo 14d Precip:{" "}
-                          <strong>{selectedAppDetail.weather_profile.forecast_14d_precip_mm} mm</strong> (Anomaly:{" "}
-                          {selectedAppDetail.weather_profile.rainfall_anomaly_pct}%)
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="h-44 w-full pt-1">
+                    <div className="h-44 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={forecastChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis dataKey="scenario" tick={{ fontSize: 10, fill: "#475569" }} />
+                        <AreaChart data={cashflowCurveData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="bankHarvestGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#b8e354" stopOpacity={0.55} />
+                              <stop offset="95%" stopColor="#b8e354" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="bankStressGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#9cc0d1" stopOpacity={0.45} />
+                              <stop offset="95%" stopColor="#9cc0d1" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,21,19,0.06)" vertical={false} />
+                          <XAxis dataKey="phase" tick={{ fontSize: 11, fill: "#8a877d" }} axisLine={false} tickLine={false} />
                           <YAxis
-                            tick={{ fontSize: 10, fill: "#475569" }}
+                            tick={{ fontSize: 11, fill: "#8a877d" }}
+                            axisLine={false}
+                            tickLine={false}
                             tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
                             width={42}
                           />
                           <Tooltip
-                            formatter={(val) => [`₹${Number(val).toLocaleString("en-IN")}`, "Amount"]}
-                            contentStyle={{ fontSize: "11px", borderRadius: "8px" }}
+                            formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`, ""]}
+                            contentStyle={{ fontSize: "12px", borderRadius: "12px" }}
                           />
-                          <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
-                            {forecastChartData.map((entry, idx) => (
-                              <Cell key={idx} fill={entry.fill} />
-                            ))}
-                          </Bar>
-                        </BarChart>
+                          <Area type="monotone" dataKey="harvest" name="Expected Revenue" stroke="#84cc16" strokeWidth={2} fill="url(#bankHarvestGrad)" />
+                          <Area type="monotone" dataKey="stress" name="Drought Stress" stroke="#7aa2b8" strokeWidth={2} fill="url(#bankStressGrad)" />
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
 
-                  {/* Recharts Chart 2: Real SHAP TreeExplainer Attribution Chart */}
-                  <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700 flex items-center space-x-1.5">
-                        <Activity className="w-3.5 h-3.5 text-emerald-700" />
-                        <span>XGBoost + SHAP Risk Breakdown</span>
-                      </span>
-                      <span className="text-[11px] font-mono font-bold text-slate-800">
-                        PD: {(selectedAppDetail.pd_score * 100).toFixed(1)}%
-                      </span>
-                    </div>
+                  {/* Card 2: Split Gauge + SHAP Attribution */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <ClimateGaugeCard
+                      title="DSCR & Climate"
+                      subtitle={selectedAppDetail.irrigation_source}
+                      primaryValue={`${selectedAppDetail.dscr_ratio}x`}
+                      progressRatio={Math.min(1, selectedAppDetail.dscr_ratio / 2.5)}
+                      metric1Label="Sanction"
+                      metric1Val={`₹${Math.round(selectedAppDetail.sanctioned_amount / 1000)}k`}
+                      metric2Label="Net Worth"
+                      metric2Val={`₹${Math.round(selectedAppDetail.net_worth / 1000)}k`}
+                      metric3Label="14d Rain"
+                      metric3Val={`${selectedAppDetail.weather_profile?.forecast_14d_precip_mm ?? 0} mm`}
+                    />
 
-                    <div className="h-36 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={shapChartData}
-                          layout="vertical"
-                          margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis type="number" tick={{ fontSize: 10, fill: "#475569" }} unit="%" />
-                          <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#334155" }} width={120} />
-                          <ReferenceLine x={0} stroke="#64748b" />
-                          <Tooltip
-                            formatter={(val) => [`${Number(val) > 0 ? "+" : ""}${val}% PD Impact`, "SHAP"]}
-                            contentStyle={{ fontSize: "11px", borderRadius: "8px" }}
-                          />
-                          <Bar dataKey="delta" radius={[3, 3, 3, 3]}>
-                            {shapChartData.map((entry, idx) => (
-                              <Cell key={idx} fill={entry.delta < 0 ? "#047857" : "#d97706"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] text-slate-500">Scale of Finance Sanction</span>
-                      <div className="text-lg font-bold text-emerald-800 font-mono">
-                        ₹{Number(selectedAppDetail.sanctioned_amount || 0).toLocaleString("en-IN")}
+                    <div className="bento-card p-5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[15px] font-medium text-[#141513]">SHAP Risk Drivers</h3>
+                        <span className="text-xs font-mono text-[#5e5c55]">
+                          {(selectedAppDetail.pd_score * 100).toFixed(1)}% PD
+                        </span>
+                      </div>
+                      <div className="h-44 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={shapChartData} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                            <XAxis type="number" tick={{ fontSize: 10, fill: "#8a877d" }} unit="%" axisLine={false} tickLine={false} />
+                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#5e5c55" }} width={105} axisLine={false} tickLine={false} />
+                            <ReferenceLine x={0} stroke="rgba(20,21,19,0.2)" />
+                            <Tooltip
+                              formatter={(val) => [`${Number(val) > 0 ? "+" : ""}${val}%`, "SHAP"]}
+                              contentStyle={{ fontSize: "11px", borderRadius: "10px" }}
+                            />
+                            <Bar dataKey="delta" radius={[4, 4, 4, 4]}>
+                              {shapChartData.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.delta < 0 ? "#84cc16" : "#d97706"} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
                       </div>
                     </div>
-                    {selectedAppDetail.status !== "approved" && (
-                      <button
-                        onClick={() => {
-                          api.disburseBatch([selectedAppDetail.id]).then(() => {
-                            fetchApplications();
-                            loadApplicationDetail(selectedAppDetail.id);
-                          });
-                        }}
-                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold"
-                      >
-                        Approve & Disburse Tranches
-                      </button>
-                    )}
                   </div>
-                </div>
-              ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: CONSTRAINED PORTFOLIO OPTIMIZER (SCIPY MILP) */}
+      {/* TAB 2: PORTFOLIO OPTIMIZER */}
       {activeTab === "optimizer" && (
-        <div className="space-y-6">
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start space-x-3 text-xs text-blue-900">
-            <Scale className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
-            <div className="space-y-1">
-              <strong className="text-sm">Constrained MILP Optimizer: Resolving the Govt vs. Bank Conflict</strong>
-              <p>
-                Solves Mixed-Integer Linear Programming via <code>scipy.optimize.milp</code> with Government First-Loss Default Guarantee (FLDG) to satisfy RBI PSL quotas while staying strictly under the Bank NPA ceiling.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                <Sliders className="w-4 h-4 text-blue-700" />
-                <span>What-If Sensitivity Parameters</span>
-              </span>
+        <div className="space-y-5">
+          <div className="bento-card p-6 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-[15px] font-medium text-[#141513]">Allocation Parameters (MILP)</h3>
               <button
                 onClick={handleRunOptimizer}
                 disabled={optimizing}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold"
+                className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium"
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{optimizing ? "Solving MILP..." : "Run MILP Optimization"}</span>
+                <Play className="w-3.5 h-3.5 text-[#d4f04c] fill-current" />
+                <span>{optimizing ? "Optimizing..." : "Run Optimizer"}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="font-semibold text-slate-700">Agri Credit Pool (X)</span>
-                  <span className="font-mono font-bold text-slate-900">
-                    ₹{(budgetSlider / 100000).toFixed(1)} Lakh
-                  </span>
+                  <span className="text-[#5e5c55]">Credit Pool</span>
+                  <span className="font-mono font-medium text-[#141513]">₹{(budgetSlider / 100000).toFixed(1)}L</span>
                 </div>
                 <input
                   type="range"
@@ -588,13 +445,14 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   step="500000"
                   value={budgetSlider}
                   onChange={(e) => setBudgetSlider(parseFloat(e.target.value))}
-                  className="w-full accent-blue-700 cursor-pointer"
+                  className="w-full cursor-pointer"
                 />
               </div>
-              <div className="space-y-1.5">
+
+              <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="font-semibold text-slate-700">Bank NPA Risk Ceiling</span>
-                  <span className="font-mono font-bold text-slate-900">{npaSlider}%</span>
+                  <span className="text-[#5e5c55]">Max NPA Cap</span>
+                  <span className="font-mono font-medium text-[#141513]">{npaSlider}%</span>
                 </div>
                 <input
                   type="range"
@@ -603,13 +461,14 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   step="0.25"
                   value={npaSlider}
                   onChange={(e) => setNpaSlider(parseFloat(e.target.value))}
-                  className="w-full accent-blue-700 cursor-pointer"
+                  className="w-full cursor-pointer"
                 />
               </div>
-              <div className="space-y-1.5">
+
+              <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="font-semibold text-slate-700">Govt FLDG Guarantee (&gamma;)</span>
-                  <span className="font-mono font-bold text-emerald-700">{fldgSlider}%</span>
+                  <span className="text-[#5e5c55]">Govt Guarantee (FLDG)</span>
+                  <span className="font-mono font-medium text-[#4d7c0f]">{fldgSlider}%</span>
                 </div>
                 <input
                   type="range"
@@ -618,13 +477,14 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   step="5"
                   value={fldgSlider}
                   onChange={(e) => setFldgSlider(parseFloat(e.target.value))}
-                  className="w-full accent-emerald-600 cursor-pointer"
+                  className="w-full cursor-pointer"
                 />
               </div>
-              <div className="space-y-1.5">
+
+              <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="font-semibold text-slate-700">RBI SMF Quota (&alpha;)</span>
-                  <span className="font-mono font-bold text-slate-900">{smfQuotaSlider}%</span>
+                  <span className="text-[#5e5c55]">RBI SMF Quota</span>
+                  <span className="font-mono font-medium text-[#141513]">{smfQuotaSlider}%</span>
                 </div>
                 <input
                   type="range"
@@ -633,128 +493,118 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   step="2"
                   value={smfQuotaSlider}
                   onChange={(e) => setSmfQuotaSlider(parseFloat(e.target.value))}
-                  className="w-full accent-blue-700 cursor-pointer"
+                  className="w-full cursor-pointer"
                 />
               </div>
             </div>
           </div>
 
           {optResult && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Recharts Comparison Chart */}
-                <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-800">
-                    Equitable DSS vs Pure Profit (Recharts)
-                  </h4>
-                  <div className="h-56 w-full">
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="bento-card p-5 space-y-3">
+                  <h4 className="text-sm font-medium text-[#141513]">DSS vs Pure Profit</h4>
+                  <div className="h-52 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={optimizerChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="metric" tick={{ fontSize: 10, fill: "#475569" }} />
-                        <YAxis tick={{ fontSize: 10, fill: "#475569" }} />
-                        <Tooltip contentStyle={{ fontSize: "11px", borderRadius: "8px" }} />
-                        <Bar dataKey="DSS" name="Equitable DSS" fill="#047857" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="PureProfit" name="Pure Profit" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                      <BarChart data={optimizerChartData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,21,19,0.06)" vertical={false} />
+                        <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "#8a877d" }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 11, fill: "#8a877d" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: "12px", borderRadius: "12px" }} />
+                        <Bar dataKey="DSS" name="Equitable DSS" fill="#84cc16" radius={[6, 6, 0, 0]} />
+                        <Bar dataKey="PureProfit" name="Pure Profit" fill="#d1d5db" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* Equitable DSS Card */}
-                <div className="bg-white rounded-xl border-2 border-emerald-500 p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <span className="text-xs font-bold text-emerald-800">Equitable DSS Allocation</span>
-                    <span className="text-sm font-bold text-emerald-700 font-mono">
+                <div className="bento-card p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
+                    <span className="text-sm font-medium text-[#141513]">Equitable DSS</span>
+                    <span className="text-sm font-mono font-medium text-[#4d7c0f]">
                       ₹{Number(optResult.metrics.equitable_dss.total_disbursed).toLocaleString("en-IN")}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">SMF Share</span>
-                      <div className="text-lg font-bold text-emerald-700 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">SMF Share</span>
+                      <div className="text-xl font-medium text-[#4d7c0f] font-mono mt-0.5">
                         {optResult.metrics.equitable_dss.smf_share_pct}%
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">Net NPA</span>
-                      <div className="text-lg font-bold text-slate-900 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">Net NPA</span>
+                      <div className="text-xl font-medium text-[#141513] font-mono mt-0.5">
                         {optResult.metrics.equitable_dss.portfolio_npa_pct}%
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">SMF Farmers</span>
-                      <div className="text-lg font-bold text-slate-900 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">SMF Served</span>
+                      <div className="text-lg font-medium text-[#141513] font-mono mt-0.5">
                         {optResult.metrics.equitable_dss.smf_farmers_served}
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">FLDG Cushion</span>
-                      <div className="text-sm font-bold text-blue-700 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">FLDG Used</span>
+                      <div className="text-sm font-medium text-[#141513] font-mono mt-1">
                         ₹{Number(optResult.metrics.equitable_dss.govt_guarantee_utilized).toLocaleString("en-IN")}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Pure Profit Card */}
-                <div className="bg-white rounded-xl border border-slate-300 p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <span className="text-xs font-bold text-slate-700">Pure Profit (Unconstrained)</span>
-                    <span className="text-sm font-bold text-slate-700 font-mono">
+                <div className="bento-card p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
+                    <span className="text-sm font-medium text-[#5e5c55]">Pure Profit</span>
+                    <span className="text-sm font-mono text-[#5e5c55]">
                       ₹{Number(optResult.metrics.pure_profit.total_disbursed).toLocaleString("en-IN")}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">SMF Share</span>
-                      <div className="text-lg font-bold text-amber-700 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">SMF Share</span>
+                      <div className="text-xl font-medium text-[#d97706] font-mono mt-0.5">
                         {optResult.metrics.pure_profit.smf_share_pct}%
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">Portfolio NPA</span>
-                      <div className="text-lg font-bold text-slate-800 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">Portfolio NPA</span>
+                      <div className="text-xl font-medium text-[#5e5c55] font-mono mt-0.5">
                         {optResult.metrics.pure_profit.portfolio_npa_pct}%
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">SMF Farmers</span>
-                      <div className="text-lg font-bold text-slate-800 font-mono">
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">SMF Served</span>
+                      <div className="text-lg font-medium text-[#5e5c55] font-mono mt-0.5">
                         {optResult.metrics.pure_profit.smf_farmers_served}
                       </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">Welfare Delta</span>
-                      <div className="text-lg font-bold text-emerald-700 font-mono">
-                        +{optResult.metrics.welfare_delta.additional_marginal_farmers_helped} SMF
+                    <div className="bento-surface-soft p-3">
+                      <span className="text-[#8a877d]">Additional SMF</span>
+                      <div className="text-lg font-medium text-[#4d7c0f] font-mono mt-0.5">
+                        +{optResult.metrics.welfare_delta.additional_marginal_farmers_helped}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="text-xs font-bold text-emerald-900">
-                    Ready to Disburse Optimized Batch ({optResult.dss_approved_count} Farmers)
-                  </div>
-                  <p className="text-xs text-emerald-800">
-                    Generates 3 purpose-locked tranches (60% e-RUPI, 30% UPI ops, 10% sowing rebate) for all approved applicants.
-                  </p>
+              <div className="bento-card p-5 flex flex-wrap items-center justify-between gap-4">
+                <div className="text-xs text-[#5e5c55]">
+                  Approve batch of <strong className="text-[#141513]">{optResult.dss_approved_count}</strong> applicants and issue purpose-locked tranches
                 </div>
                 <button
                   onClick={handleDisburseBatch}
                   disabled={disbursing}
-                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shrink-0"
+                  className="px-5 py-2.5 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85"
                 >
-                  {disbursing ? "Disbursing..." : "Disburse Batch with 1-Click Audit Log"}
+                  {disbursing ? "Disbursing..." : "Approve & Disburse Batch"}
                 </button>
               </div>
 
               {disburseSuccess && (
-                <div className="p-3 bg-white border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="bento-card p-4 text-xs text-[#365314] bg-[#eef7d6] flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4" />
                   <span>{disburseSuccess}</span>
                 </div>
               )}
@@ -763,63 +613,47 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
         </div>
       )}
 
-      {/* TAB 3: GRIEVANCE QUEUE */}
+      {/* TAB 3: APPEALS QUEUE */}
       {activeTab === "grievances" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-          <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Farmer Appeals & Grievance SLA Queue</h3>
-              <p className="text-xs text-slate-500">7-day statutory SLA countdown</p>
-            </div>
-            <span className="text-xs font-mono font-bold text-blue-700">{bankGrievances.length} Active</span>
-          </div>
-
-          <div className="space-y-4">
+        <div className="bento-card p-6 space-y-4">
+          <h3 className="text-[15px] font-medium text-[#141513]">Open Appeals</h3>
+          <div className="space-y-3">
             {bankGrievances.map((g) => (
-              <div key={g.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              <div key={g.id} className="bento-surface-soft p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
                   <div>
-                    <span className="text-xs font-bold text-slate-900">{g.full_name}</span>
-                    <span className="text-xs text-slate-500 ml-2">
-                      ({g.district} • App: {g.application_no || "N/A"})
+                    <span className="font-medium text-[#141513]">{g.full_name}</span>
+                    <span className="text-[#8a877d] ml-2">
+                      {g.district} · {g.category}
                     </span>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold capitalize ${
-                      g.resolution_status === "resolved"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : g.resolution_status === "escalated"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
+                  <span className="px-2 py-0.5 rounded-full text-[11px] capitalize bg-white border border-black/[0.08] text-[#5e5c55]">
                     {g.resolution_status}
                   </span>
                 </div>
-                <div className="text-xs text-slate-800 font-semibold">Category: {g.category}</div>
-                <p className="text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200">{g.grievance_text}</p>
+                <p className="text-xs text-[#5e5c55]">{g.grievance_text}</p>
                 {g.bank_response ? (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-900">
-                    <strong>Logged Response:</strong> {g.bank_response}
+                  <div className="text-xs text-[#365314] bg-[#eef7d6] p-2.5 rounded-lg">
+                    Response: {g.bank_response}
                   </div>
                 ) : respondingId === g.id ? (
-                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <div className="space-y-2">
                     <textarea
                       rows={2}
                       value={responseText}
                       onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Mandatory written justification..."
-                      className="w-full text-xs p-2 border border-slate-300 rounded-md"
+                      placeholder="Written justification"
+                      className="w-full text-xs p-2.5 bg-white border border-black/10 rounded-xl"
                     />
                     <div className="flex justify-end space-x-2">
-                      <button onClick={() => setRespondingId(null)} className="px-3 py-1 bg-slate-200 rounded text-xs">
+                      <button onClick={() => setRespondingId(null)} className="px-3 py-1 text-xs text-[#5e5c55]">
                         Cancel
                       </button>
                       <button
                         onClick={() => handleResolveGrievance(g.id)}
-                        className="px-3 py-1 bg-blue-700 text-white rounded text-xs font-semibold"
+                        className="px-4 py-1 bg-[#141513] text-white rounded-full text-xs font-medium"
                       >
-                        Submit Justification
+                        Resolve
                       </button>
                     </div>
                   </div>
@@ -829,9 +663,9 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       setRespondingId(g.id);
                       setResponseText("");
                     }}
-                    className="px-3 py-1.5 bg-slate-900 text-white rounded text-xs font-medium"
+                    className="px-3.5 py-1.5 bg-[#141513] text-white rounded-full text-xs font-medium"
                   >
-                    Respond & Resolve
+                    Respond
                   </button>
                 )}
               </div>

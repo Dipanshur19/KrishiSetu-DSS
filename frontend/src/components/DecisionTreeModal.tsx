@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X, ShieldCheck, Scale } from "lucide-react";
+import { X, Scale } from "lucide-react";
 import { FarmerApplicationOutcome } from "@/types/dss";
 
 interface DecisionTreeModalProps {
@@ -16,106 +16,83 @@ export default function DecisionTreeModal({ isOpen, onClose, outcome }: Decision
   const steps = outcome.decision_tree_path || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#141513]/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl border border-black/[0.08] max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-black/[0.06] flex items-center justify-between bg-[#fafaf6]">
           <div className="flex items-center space-x-2">
-            <Scale className="w-5 h-5 text-emerald-700" strokeWidth={1.5} />
-            <h3 className="text-base font-semibold text-slate-900">
-              RBI & Policy Eligibility Engine: Decision Tree Execution Path
+            <Scale className="w-4 h-4 text-[#4d7c0f]" strokeWidth={1.5} />
+            <h3 className="text-sm font-medium text-[#141513]">
+              Eligibility Decision Path — {outcome.application_no}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-200 transition-colors"
+            className="text-[#8a877d] hover:text-[#141513] p-1 rounded-full hover:bg-black/[0.05] transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6">
-          <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 flex items-start space-x-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-700 mt-0.5 shrink-0" />
-            <div>
-              <div className="text-sm font-semibold text-emerald-900">
-                Classification: {outcome.farmer_classification} Farmer • Instrument: {outcome.facility_type}
-              </div>
-              <p className="text-xs text-emerald-800 mt-0.5">
-                Evaluated against UP SLTC Scale-of-Finance JSON, RBI Priority Sector Lending (PSL) & MISS rules.
-              </p>
-            </div>
-          </div>
-
-          <div className="relative pl-6 space-y-6 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+        <div className="p-6 overflow-y-auto space-y-5">
+          <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-px before:bg-black/10">
             {steps.map((st, idx) => {
               const isPass = st.status === "PASS";
               return (
                 <div key={idx} className="relative">
                   <div
-                    className={`absolute -left-6 top-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-white ${
-                      isPass ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
+                    className={`absolute -left-6 top-1 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono font-medium ring-4 ring-white ${
+                      isPass ? "bg-[#141513] text-[#d4f04c]" : "bg-[#d97706] text-white"
                     }`}
                   >
                     {st.step}
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 ml-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500 font-mono">
-                        Step {st.step}: {st.name}
+                  <div className="bento-surface-soft p-4 ml-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-[#5e5c55]">
+                        Step {st.step} · {st.name}
                       </span>
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          isPass ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                          isPass ? "bg-[#eef7d6] text-[#365314]" : "bg-amber-100 text-amber-900"
                         }`}
                       >
                         {st.result}
                       </span>
                     </div>
-
-                    <p className="text-sm font-medium text-slate-800 mt-1.5">{st.details}</p>
-
-                    {st.data && (
-                      <div className="mt-2.5 pt-2 border-t border-slate-200/80 flex flex-wrap gap-2 text-xs text-slate-600">
-                        {Object.entries(st.data).map(([k, v]) => (
-                          <span key={k} className="px-2 py-0.5 bg-white rounded border border-slate-200 font-mono">
-                            {k}: <strong className="text-slate-900">{typeof v === "boolean" ? (v ? "Yes" : "No") : String(v)}</strong>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <p className="text-xs text-[#141513] mt-1.5 leading-relaxed">{st.details}</p>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-100 rounded-lg border border-slate-200 text-center">
+          <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-[#fafaf6] border border-black/[0.06] text-center">
             <div>
-              <span className="text-xs text-slate-500">Scale of Finance Limit</span>
-              <div className="text-lg font-bold text-slate-900 font-mono">
+              <span className="text-[11px] text-[#8a877d]">Scale of Finance</span>
+              <div className="text-base font-medium text-[#141513] font-mono mt-0.5">
                 ₹{Number(outcome.scale_of_finance_limit || 0).toLocaleString("en-IN")}
               </div>
             </div>
             <div>
-              <span className="text-xs text-slate-500">Sanctioned Amount</span>
-              <div className="text-lg font-bold text-emerald-700 font-mono">
+              <span className="text-[11px] text-[#8a877d]">Sanctioned</span>
+              <div className="text-base font-medium text-[#4d7c0f] font-mono mt-0.5">
                 ₹{Number(outcome.sanctioned_amount || 0).toLocaleString("en-IN")}
               </div>
             </div>
             <div>
-              <span className="text-xs text-slate-500">Effective Interest (MISS)</span>
-              <div className="text-lg font-bold text-blue-700 font-mono">4.0% p.a.</div>
+              <span className="text-[11px] text-[#8a877d]">MISS Interest</span>
+              <div className="text-base font-medium text-[#141513] font-mono mt-0.5">4.0% p.a.</div>
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+        <div className="px-6 py-3.5 border-t border-black/[0.06] bg-[#fafaf6] flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+            className="px-5 py-1.5 bg-[#141513] text-white rounded-full text-xs font-medium hover:bg-black/80 transition-colors"
           >
-            Close Inspector
+            Close
           </button>
         </div>
       </div>

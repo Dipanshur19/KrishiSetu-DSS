@@ -2,11 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  Sprout,
   CheckCircle2,
-  ShieldCheck,
   QrCode,
-  FileText,
   Mic,
   MicOff,
   ArrowRight,
@@ -14,13 +11,20 @@ import {
   RefreshCw,
   Upload,
   Clock,
-  AlertCircle,
-  Info,
-  Landmark,
-  CloudRain,
+  ArrowUpRight,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 import DecisionTreeModal from "./DecisionTreeModal";
 import QrCodeModal from "./QrCodeModal";
+import ClimateGaugeCard from "./ClimateGaugeCard";
 import { api } from "@/lib/api";
 import { t } from "@/i18n/translations";
 import {
@@ -83,7 +87,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
   const [grievanceCategory, setGrievanceCategory] = useState("Collateral demanded under 2L");
   const [grievanceText, setGrievanceText] = useState("");
-  const [grievanceDocName, setGrievanceDocName] = useState("khasra_extract_proof.pdf");
+  const [grievanceDocName, setGrievanceDocName] = useState("khasra_extract.pdf");
   const [grievancesList, setGrievancesList] = useState<Grievance[]>([]);
   const [grievanceSuccess, setGrievanceSuccess] = useState("");
 
@@ -179,7 +183,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
     const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
     if (!SpeechRec) {
-      alert("Web Speech API is not supported in this browser. Please use Chrome or Edge.");
+      alert("Speech recognition requires Chrome or Edge.");
       return;
     }
     if (isListening) {
@@ -212,7 +216,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
       loadOutcome(data.application_id);
       setActiveTab("outcome");
     } catch (err: unknown) {
-      alert("Application failed: " + (err instanceof Error ? err.message : "Error"));
+      alert("Submission failed: " + (err instanceof Error ? err.message : "Error"));
     }
   };
 
@@ -221,7 +225,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
     if (!file) return;
     try {
       const uploaded = await api.uploadFile(file);
-      setGrievanceDocName(`${uploaded.filename} (${uploaded.storage})`);
+      setGrievanceDocName(uploaded.filename);
     } catch (err) {
       console.error(err);
     }
@@ -231,7 +235,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
     setSowingUploading(true);
     setSowingSuccess("");
     try {
-      let photoRef = "crop_sowing_khasra_proof.jpg";
+      let photoRef = "crop_sowing_gps_proof.jpg";
       if (file) {
         const uploaded = await api.uploadFile(file);
         photoRef = uploaded.url;
@@ -272,18 +276,29 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
   const sanctionedAmt = Number(outcome?.sanctioned_amount || 0);
   const missSavings = Math.round(sanctionedAmt * 0.03);
 
+  // Smooth Seasonal Projection Chart Data for Farmer Outcome
+  const harvestCurveData = outcome
+    ? [
+        { stage: "Sowing", expected: 0, stress: 0 },
+        { stage: "Vegetative", expected: Math.round(outcome.expected_revenue * 0.2), stress: Math.round(outcome.drought_stress_revenue * 0.15) },
+        { stage: "Flowering", expected: Math.round(outcome.expected_revenue * 0.52), stress: Math.round(outcome.drought_stress_revenue * 0.45) },
+        { stage: "Maturity", expected: Math.round(outcome.expected_revenue * 0.85), stress: Math.round(outcome.drought_stress_revenue * 0.78) },
+        { stage: "Harvest", expected: Math.round(outcome.expected_revenue), stress: Math.round(outcome.drought_stress_revenue) },
+      ]
+    : [];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 gap-4">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Editorial Title & Action Pills */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
-            <Sprout className="w-6 h-6 text-emerald-600" strokeWidth={1.5} />
-            <span>{t(lang, "farmer_portal_title")}</span>
+          <p className="text-xs text-[#8a877d]">{t(lang, "farmer_eyebrow")}</p>
+          <h1 className="text-3xl font-medium tracking-tight text-[#141513] mt-0.5">
+            {t(lang, "farmer_title")}
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5">{t(lang, "farmer_portal_sub")}</p>
         </div>
 
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-1.5">
           {(["apply", "outcome", "wallet", "grievances"] as const).map((tabKey) => {
             const labelMap = {
               apply: t(lang, "tab_apply"),
@@ -291,14 +306,15 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
               wallet: t(lang, "tab_wallet"),
               grievances: t(lang, "tab_grievances"),
             };
+            const isActive = activeTab === tabKey;
             return (
               <button
                 key={tabKey}
                 onClick={() => setActiveTab(tabKey)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
-                  activeTab === tabKey
-                    ? "bg-white text-emerald-800 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
+                className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-[#141513] text-white"
+                    : "bg-white border border-black/[0.08] text-[#5e5c55] hover:text-[#141513]"
                 }`}
               >
                 {labelMap[tabKey]}
@@ -308,163 +324,135 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
         </div>
       </div>
 
-      {/* TAB 1: 4-STEP LOW-FRICTION APPLICATION WIZARD */}
+      {/* TAB 1: CLEAN 4-STEP CREDIT WIZARD + LIVE ESTIMATOR BENTO */}
       {activeTab === "apply" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
-            <div className="mb-6 pb-4 border-b border-slate-200">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2">
-                <span>Step {wizardStep} of 4</span>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Wizard Form (8 cols) */}
+          <div className="lg:col-span-8 bento-card p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 mb-6 border-b border-black/[0.06]">
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs font-mono text-[#8a877d]">Step {wizardStep}/4</span>
+                  <div className="flex items-center space-x-1.5">
+                    {[1, 2, 3, 4].map((s) => (
+                      <button
+                        type="button"
+                        key={s}
+                        onClick={() => setWizardStep(s)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          s <= wizardStep ? "w-8 bg-[#a3d929]" : "w-5 bg-[#e5e5dc]"
+                        }`}
+                        title={`Step ${s}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   onClick={toggleSpeechRecognition}
-                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     isListening
                       ? "bg-red-100 text-red-700"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      : "bg-[#f5f5ee] text-[#141513] hover:bg-[#ebebdf]"
                   }`}
                 >
-                  {isListening ? (
-                    <MicOff className="w-3.5 h-3.5 text-red-600" />
-                  ) : (
-                    <Mic className="w-3.5 h-3.5 text-slate-600" />
-                  )}
+                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-[#4d7c0f]" />}
                   <span>{isListening ? t(lang, "listening") : t(lang, "voice_input")}</span>
                 </button>
               </div>
 
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-emerald-600 h-2 transition-all duration-300"
-                  style={{ width: `${(wizardStep / 4) * 100}%` }}
-                />
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 mt-2 text-[11px] text-slate-500 text-center font-medium">
-                <span className={wizardStep === 1 ? "text-emerald-700 font-bold" : ""}>1. PM-KISAN KYC</span>
-                <span className={wizardStep === 2 ? "text-emerald-700 font-bold" : ""}>2. Land & Crops</span>
-                <span className={wizardStep === 3 ? "text-emerald-700 font-bold" : ""}>3. Net Worth</span>
-                <span className={wizardStep === 4 ? "text-emerald-700 font-bold" : ""}>4. Review & Apply</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleApplicationSubmit}>
-              {wizardStep === 1 && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start space-x-2">
-                    <Info className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
-                    <span>
-                      {lang === "hi"
-                        ? "PM-KISAN लाभार्थी आईडी दर्ज करें; आधार ई-केवाईसी और पता स्वतः प्राप्त हो जाएगा (SBI 1-पृष्ठ मॉडल)।"
-                        : "Enter PM-KISAN ID to pre-fetch verified Aadhaar eKYC and demographics (SBI lean 1-page form)."}
-                    </span>
-                  </div>
-
+              <form id="farmer-wizard-form" onSubmit={handleApplicationSubmit}>
+                {wizardStep === 1 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        PM-KISAN / AgriStack ID
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">PM-KISAN ID</label>
                       <input
                         type="text"
                         value={formData.pmkisan_id}
                         onChange={(e) => setFormData({ ...formData, pmkisan_id: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono focus:outline-none focus:border-[#141513]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Farmer Full Name
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Full Name</label>
                       <input
                         type="text"
                         value={formData.full_name}
                         onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#141513]"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Mobile Phone Number
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Phone Number</label>
                       <input
                         type="text"
                         value={formData.phone}
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono focus:outline-none focus:border-[#141513]"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Social Category (PSL Weaker Section)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Category</label>
                       <select
                         value={formData.social_category}
                         onChange={(e) => setFormData({ ...formData, social_category: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#141513]"
                       >
-                        <option value="OBC">OBC (Other Backward Class)</option>
-                        <option value="SC">SC (Scheduled Caste)</option>
-                        <option value="ST">ST (Scheduled Tribe)</option>
-                        <option value="Women">Women SHG Member</option>
+                        <option value="OBC">OBC</option>
+                        <option value="SC">SC</option>
+                        <option value="ST">ST</option>
+                        <option value="Women">Women SHG</option>
                         <option value="Minority">Minority</option>
                         <option value="PWD">PWD</option>
                         <option value="GEN">General</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">District</label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">District</label>
                       <select
                         value={formData.district}
                         onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#141513]"
                       >
                         <option value="Kanpur Dehat">Kanpur Dehat</option>
                         <option value="Kanpur Nagar">Kanpur Nagar</option>
                         <option value="Unnao">Unnao</option>
-                        <option value="Jhansi">Jhansi (Bundelkhand Zone)</option>
+                        <option value="Jhansi">Jhansi</option>
                         <option value="Lucknow">Lucknow</option>
                         <option value="Barabanki">Barabanki</option>
                         <option value="Fatehpur">Fatehpur</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Village / Panchayat
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Village</label>
                       <input
                         type="text"
                         value={formData.village}
                         onChange={(e) => setFormData({ ...formData, village: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#141513]"
                         required
                       />
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {wizardStep === 2 && (
-                <div className="space-y-4">
+                {wizardStep === 2 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Survey / Khasra Plot No.
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Khasra / Survey No.</label>
                       <input
                         type="text"
                         value={formData.survey_khasra_no}
                         onChange={(e) => setFormData({ ...formData, survey_khasra_no: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Total Operational Area (Acres)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Operational Area (Acres)</label>
                       <input
                         type="number"
                         step="0.1"
@@ -474,71 +462,57 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                         onChange={(e) =>
                           setFormData({ ...formData, area_acres: parseFloat(e.target.value) || 0.1 })
                         }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                         required
                       />
-                      <span className="text-[11px] text-slate-500">
-                        = {(formData.area_acres / 2.471).toFixed(2)} Hectares (
-                        {formData.area_acres / 2.471 <= 1.0
-                          ? "Marginal Farmer <= 1 ha"
-                          : formData.area_acres / 2.471 <= 2.0
-                          ? "Small Farmer <= 2 ha"
-                          : "Other"}
-                        )
+                      <span className="text-[11px] text-[#8a877d] mt-1 block font-mono">
+                        {(formData.area_acres / 2.471).toFixed(2)} ha
                       </span>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Land Ownership Type
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Land Ownership</label>
                       <select
                         value={formData.ownership_type}
                         onChange={(e) => setFormData({ ...formData, ownership_type: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
                       >
-                        <option value="owned">Owned Land (Title Holder)</option>
-                        <option value="registered_lease">Registered Lease Agreement</option>
-                        <option value="oral_lease">Oral Lessee (Panchayat Certificate)</option>
-                        <option value="sharecropper">Sharecropper (Bataidar with Affidavit)</option>
+                        <option value="owned">Owned Title</option>
+                        <option value="registered_lease">Registered Lease</option>
+                        <option value="oral_lease">Oral Lease (Panchayat Cert)</option>
+                        <option value="sharecropper">Sharecropper (Affidavit)</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Primary Irrigation Method
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Irrigation Source</label>
                       <select
                         value={formData.irrigation_source}
                         onChange={(e) => setFormData({ ...formData, irrigation_source: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
                       >
-                        <option value="Drip">Drip Irrigation (1.25x Yield Resilience)</option>
-                        <option value="Sprinkler">Sprinkler Irrigation (1.15x Yield)</option>
-                        <option value="Canal">Canal / Gravity Flow</option>
-                        <option value="Well">Tubewell / Borewell</option>
-                        <option value="Dry">Dry / Rainfed</option>
+                        <option value="Drip">Drip Irrigation</option>
+                        <option value="Sprinkler">Sprinkler Irrigation</option>
+                        <option value="Canal">Canal</option>
+                        <option value="Well">Borewell</option>
+                        <option value="Dry">Rainfed</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Primary Crop (Current Season)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Primary Crop</label>
                       <select
                         value={formData.primary_crop}
                         onChange={(e) => setFormData({ ...formData, primary_crop: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
                       >
-                        <option value="Wheat">Wheat (Rabi - SoF ₹24,000/acre)</option>
-                        <option value="Paddy">Paddy (Kharif - SoF ₹26,000/acre)</option>
-                        <option value="Potato">Potato (SoF ₹42,000/acre)</option>
-                        <option value="Mustard">Mustard (SoF ₹18,000/acre)</option>
-                        <option value="Sugarcane">Sugarcane (SoF ₹48,000/acre)</option>
-                        <option value="Gram">Gram / Chana (SoF ₹20,000/acre)</option>
+                        <option value="Wheat">Wheat</option>
+                        <option value="Paddy">Paddy</option>
+                        <option value="Potato">Potato</option>
+                        <option value="Mustard">Mustard</option>
+                        <option value="Sugarcane">Sugarcane</option>
+                        <option value="Gram">Gram</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Allied Milch Animals (Cows / Buffaloes)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Milch Animals</label>
                       <input
                         type="number"
                         min="0"
@@ -547,23 +521,16 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                         onChange={(e) =>
                           setFormData({ ...formData, livestock_count: parseInt(e.target.value) || 0 })
                         }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                       />
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {wizardStep === 3 && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900">
-                    <strong>Bank of India (AG-100) Net Worth Formula:</strong> Net Worth = [Movable Assets (K) + Immovable Land (L)] − Existing Liabilities (M).
-                  </div>
+                {wizardStep === 3 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Movable Assets (K) (₹)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Movable Assets (₹)</label>
                       <input
                         type="number"
                         step="5000"
@@ -571,13 +538,11 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                         onChange={(e) =>
                           setFormData({ ...formData, movable_asset_k: parseFloat(e.target.value) || 0 })
                         }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Immovable Assets (L) (₹)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Immovable Assets (₹)</label>
                       <input
                         type="number"
                         step="25000"
@@ -585,13 +550,11 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                         onChange={(e) =>
                           setFormData({ ...formData, immovable_asset_l: parseFloat(e.target.value) || 0 })
                         }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Existing Liabilities (M) (₹)
-                      </label>
+                      <label className="block text-xs text-[#5e5c55] mb-1.5">Existing Debt (₹)</label>
                       <input
                         type="number"
                         step="5000"
@@ -599,313 +562,342 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                         onChange={(e) =>
                           setFormData({ ...formData, existing_debt: parseFloat(e.target.value) || 0 })
                         }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono"
+                        className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono"
                       />
                     </div>
                     <div className="flex items-center pt-5">
-                      <label className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer">
+                      <label className="flex items-center space-x-2 text-xs text-[#5e5c55] cursor-pointer">
                         <input
                           type="checkbox"
                           checked={formData.is_informal_debt_only}
                           onChange={(e) =>
                             setFormData({ ...formData, is_informal_debt_only: e.target.checked })
                           }
-                          className="rounded text-emerald-600"
+                          className="rounded"
                         />
-                        <span>Purely informal moneylender debt (Route to Debt-Swap)</span>
+                        <span>Informal moneylender debt only</span>
                       </label>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {wizardStep === 4 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Loan Facility Requested
-                      </label>
-                      <select
-                        value={formData.facility_type}
-                        onChange={(e) => setFormData({ ...formData, facility_type: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
-                      >
-                        <option value="Crop KCC">Crop KCC</option>
-                        <option value="Flexi KCC">Flexi KCC (₹10k–₹50k Tenant/Marginal)</option>
-                        <option value="Allied KCC">Allied KCC (Dairy & Fisheries)</option>
-                        <option value="Agri Term Loan">Agri Term Loan</option>
-                      </select>
+                {wizardStep === 4 && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-[#5e5c55] mb-1.5">Credit Facility</label>
+                        <select
+                          value={formData.facility_type}
+                          onChange={(e) => setFormData({ ...formData, facility_type: e.target.value })}
+                          className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
+                        >
+                          <option value="Crop KCC">Crop KCC</option>
+                          <option value="Flexi KCC">Flexi KCC</option>
+                          <option value="Allied KCC">Allied KCC</option>
+                          <option value="Agri Term Loan">Agri Term Loan</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#5e5c55] mb-1.5">Requested Amount (₹)</label>
+                        <input
+                          type="number"
+                          step="5000"
+                          value={formData.requested_amount}
+                          onChange={(e) =>
+                            setFormData({ ...formData, requested_amount: parseFloat(e.target.value) || 10000 })
+                          }
+                          className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl font-mono font-medium"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#5e5c55] mb-1.5">Marketing Tie-Up</label>
+                        <select
+                          value={formData.marketing_tieup}
+                          onChange={(e) => setFormData({ ...formData, marketing_tieup: e.target.value })}
+                          className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
+                        >
+                          <option value="Cooperative">Cooperative</option>
+                          <option value="Government_Procurement">Govt MSP Procurement</option>
+                          <option value="Corporate_Contract">Corporate Contract</option>
+                          <option value="Direct">Mandi Direct</option>
+                          <option value="None">None</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#5e5c55] mb-1.5">Preferred Bank</label>
+                        <select
+                          value={formData.bank_assigned}
+                          onChange={(e) => setFormData({ ...formData, bank_assigned: e.target.value })}
+                          className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
+                        >
+                          <option value="State Bank of India">State Bank of India</option>
+                          <option value="Bank of India">Bank of India</option>
+                          <option value="Punjab National Bank">Punjab National Bank</option>
+                          <option value="Bank of Baroda">Bank of Baroda</option>
+                          <option value="Axis Bank">Axis Bank</option>
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Loan Amount Requested (₹)
-                      </label>
-                      <input
-                        type="number"
-                        step="5000"
-                        value={formData.requested_amount}
-                        onChange={(e) =>
-                          setFormData({ ...formData, requested_amount: parseFloat(e.target.value) || 10000 })
-                        }
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md font-mono font-bold text-emerald-800"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Marketing Offtake Tie-Up
-                      </label>
-                      <select
-                        value={formData.marketing_tieup}
-                        onChange={(e) => setFormData({ ...formData, marketing_tieup: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
-                      >
-                        <option value="Cooperative">Dairy/Sugar Cooperative</option>
-                        <option value="Government_Procurement">Government MSP Procurement</option>
-                        <option value="Corporate_Contract">Corporate Offtake Contract</option>
-                        <option value="Direct">Direct Sale at Mandi</option>
-                        <option value="None">No Formal Tie-Up</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Assigned Bank Branch
-                      </label>
-                      <select
-                        value={formData.bank_assigned}
-                        onChange={(e) => setFormData({ ...formData, bank_assigned: e.target.value })}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
-                      >
-                        <option value="State Bank of India">State Bank of India</option>
-                        <option value="Bank of India">Bank of India</option>
-                        <option value="Punjab National Bank">Punjab National Bank</option>
-                        <option value="Bank of Baroda">Bank of Baroda</option>
-                        <option value="Axis Bank">Axis Bank</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <label className="flex items-center space-x-2 text-xs text-emerald-900 cursor-pointer">
+
+                    <label className="flex items-center space-x-2 text-xs text-[#141513] cursor-pointer pt-1">
                       <input
                         type="checkbox"
                         checked={formData.pmfby_optin}
                         onChange={(e) => setFormData({ ...formData, pmfby_optin: e.target.checked })}
-                        className="rounded text-emerald-600"
+                        className="rounded"
                       />
-                      <span className="font-semibold">
-                        Enroll in PMFBY Crop Insurance (lowers Loss Given Default & unlocks MISS interest rebate)
-                      </span>
+                      <span>Include PMFBY Crop Insurance</span>
                     </label>
                   </div>
-                </div>
-              )}
-
-              <div className="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between">
-                {wizardStep > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => setWizardStep(wizardStep - 1)}
-                    className="flex items-center space-x-1.5 px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back</span>
-                  </button>
-                ) : (
-                  <div />
                 )}
-
-                {wizardStep < 4 ? (
-                  <button
-                    type="button"
-                    onClick={() => setWizardStep(wizardStep + 1)}
-                    className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800"
-                  >
-                    <span>Next Step</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{t(lang, "submit_apply")}</span>
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-
-          {/* Real-time Scale of Finance Estimator */}
-          <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <span className="text-xs font-bold text-slate-600 flex items-center space-x-1.5">
-                <Landmark className="w-4 h-4 text-emerald-700" strokeWidth={1.5} />
-                <span>Live Scale-of-Finance Estimator</span>
-              </span>
-              {isEstimating && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />}
+              </form>
             </div>
 
-            {estimate ? (
-              <div className="space-y-3">
-                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                  <span className="text-[11px] text-slate-500">RBI Farmer Classification</span>
-                  <div className="text-base font-bold text-slate-900">
-                    {estimate.farmer_classification} Farmer
-                  </div>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    PSL 10% Marginal/Small Sub-Target
-                  </span>
-                </div>
+            <div className="mt-8 pt-4 border-t border-black/[0.06] flex items-center justify-between">
+              {wizardStep > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(wizardStep - 1)}
+                  className="flex items-center space-x-1.5 px-4 py-2 rounded-full border border-black/10 text-xs font-medium text-[#141513] hover:bg-[#fafaf6]"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back</span>
+                </button>
+              ) : (
+                <div />
+              )}
 
-                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                  <span className="text-[11px] text-slate-500">Eligible Scale-of-Finance Limit</span>
-                  <div className="text-xl font-bold text-emerald-700 font-mono">
-                    ₹{Number(estimate.scale_of_finance_limit || 0).toLocaleString("en-IN")}
-                  </div>
-                </div>
+              {wizardStep < 4 ? (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(wizardStep + 1)}
+                  className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] text-white rounded-full text-xs font-medium hover:bg-black/85"
+                >
+                  <span>Continue</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  form="farmer-wizard-form"
+                  className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{t(lang, "submit_apply")}</span>
+                </button>
+              )}
+            </div>
+          </div>
 
-                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                  <span className="text-[11px] text-slate-500">Recommended Facility</span>
-                  <div className="text-sm font-bold text-slate-800">{estimate.recommended_instrument}</div>
-                  <span className="text-[11px] text-slate-600">
-                    Collateral Required: <strong>{estimate.collateral_required ? "Yes" : "No (Waived)"}</strong>
-                  </span>
-                </div>
-
-                <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-900 space-y-1">
-                  <div className="flex justify-between">
-                    <span>MISS Base Rate:</span>
-                    <span className="font-mono line-through text-slate-400">7.0% p.a.</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-emerald-800">
-                    <span>Prompt Repayment Incentive:</span>
-                    <span className="font-mono text-emerald-700">-3.0%</span>
-                  </div>
-                  <div className="flex justify-between font-bold pt-1 border-t border-emerald-200 text-sm">
-                    <span>Effective Farmer Rate:</span>
-                    <span className="font-mono text-emerald-900">4.0% p.a.</span>
-                  </div>
-                </div>
-
-                <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded border border-slate-200">
-                  Forecasted Harvest DSCR:{" "}
-                  <strong className="text-slate-900 font-mono">{estimate.dscr_ratio}x</strong>
-                  <br />
-                  Expected Net Revenue: ₹{Number(estimate.expected_crop_revenue || 0).toLocaleString("en-IN")}
-                </div>
+          {/* Right Live Intelligence Bento Column (4 cols) */}
+          <div className="lg:col-span-4 space-y-5">
+            <div className="bento-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[15px] font-medium text-[#141513]">Eligibility Estimate</h3>
+                {isEstimating && <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#8a877d]" />}
               </div>
-            ) : (
-              <div className="py-8 text-center text-xs text-slate-400">Calculating eligibility...</div>
+
+              {estimate ? (
+                <div className="space-y-4">
+                  <div>
+                    <span className="text-xs text-[#8a877d]">Scale-of-Finance Limit</span>
+                    <div className="text-3xl font-medium text-[#141513] font-mono mt-0.5">
+                      ₹{Number(estimate.scale_of_finance_limit || 0).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-black/[0.06] text-xs">
+                    <div>
+                      <span className="text-[#8a877d]">Classification</span>
+                      <div className="font-medium text-[#141513] mt-0.5">{estimate.farmer_classification}</div>
+                    </div>
+                    <div>
+                      <span className="text-[#8a877d]">Collateral</span>
+                      <div className="font-medium text-[#4d7c0f] mt-0.5">
+                        {estimate.collateral_required ? "Required" : "Waived"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-8 text-xs text-[#8a877d]">Estimating limit...</div>
+              )}
+            </div>
+
+            {estimate && (
+              <ClimateGaugeCard
+                title="Repayment Capacity"
+                subtitle={`${formData.district} · ${formData.primary_crop}`}
+                primaryValue={`${estimate.dscr_ratio}x`}
+                progressRatio={Math.min(1, estimate.dscr_ratio / 2.5)}
+                metric1Label="MISS Rate"
+                metric1Val="4.0%"
+                metric2Label="Facility"
+                metric2Val={estimate.recommended_instrument.includes("Flexi") ? "Flexi KCC" : "KCC"}
+                metric3Label="Revenue"
+                metric3Val={`₹${Math.round((estimate.expected_crop_revenue || 0) / 1000)}k`}
+              />
             )}
           </div>
         </div>
       )}
 
-      {/* TAB 2: TRANSPARENT DECISION OUTCOME & XAI CARDS */}
+      {/* TAB 2: TRANSPARENT DECISION OUTCOME & HARVEST CURVE */}
       {activeTab === "outcome" && (
-        <div className="space-y-6">
-          <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold text-slate-700">Viewing Application:</span>
-              <span className="font-mono font-bold text-emerald-800">
-                {outcome?.application_no || "Loading..."}
-              </span>
-              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
-                {outcome?.farmer_classification} Farmer
-              </span>
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 text-xs text-[#5e5c55]">
+              <span>Application</span>
+              <span className="font-mono font-medium text-[#141513]">{outcome?.application_no || "..."}</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-slate-500">Demo Apps:</span>
-              <button onClick={() => setOutcomeAppId(1)} className="px-2 py-1 bg-white hover:bg-slate-200 border rounded text-xs">
-                App #1 (Wheat)
-              </button>
-              <button onClick={() => setOutcomeAppId(2)} className="px-2 py-1 bg-white hover:bg-slate-200 border rounded text-xs">
-                App #2 (Marginal)
-              </button>
-              <button onClick={() => setOutcomeAppId(3)} className="px-2 py-1 bg-white hover:bg-slate-200 border rounded text-xs">
-                App #3 (Bundelkhand)
-              </button>
+            <div className="flex items-center space-x-1.5">
+              {[
+                { id: 1, label: "Ram Charan" },
+                { id: 2, label: "Sunita Devi" },
+                { id: 3, label: "Kallu Ram" },
+              ].map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => setOutcomeAppId(d.id)}
+                  className={`px-3 py-1 rounded-full text-xs transition-colors ${
+                    outcomeAppId === d.id
+                      ? "bg-[#141513] text-white"
+                      : "bg-white border border-black/[0.08] text-[#5e5c55] hover:text-[#141513]"
+                  }`}
+                >
+                  {d.label}
+                </button>
+              ))}
             </div>
           </div>
 
           {loadingOutcome ? (
-            <div className="p-12 text-center text-slate-500">Loading evaluation dossier...</div>
+            <div className="bento-card p-12 text-center text-xs text-[#8a877d]">Loading outcome...</div>
           ) : outcome ? (
-            <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                      Sanction Approved
-                    </span>
-                    <span className="text-xs text-slate-500 font-mono">Ref: {outcome.application_no}</span>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900 font-mono">
-                    Sanctioned: ₹{sanctionedAmt.toLocaleString("en-IN")}
-                  </h2>
-                  <p className="text-xs text-slate-600">
-                    Facility: <strong>{outcome.facility_type}</strong> • Bank: <strong>{outcome.bank_assigned}</strong> • Effective Rate: <strong className="text-emerald-700">4.0% p.a. (Saves ₹{missSavings.toLocaleString("en-IN")}/yr via MISS)</strong>
-                  </p>
-                  {outcome.weather_profile && (
-                    <p className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
-                      <CloudRain className="w-3.5 h-3.5 text-blue-600" />
-                      <span>
-                        Open-Meteo 14d Forecast ({outcome.district}): {outcome.weather_profile.forecast_14d_precip_mm} mm precip, avg max {outcome.weather_profile.avg_max_temp_c}°C ({outcome.weather_profile.source})
-                      </span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Main Smooth Harvest AreaChart Bento Card */}
+              <div className="lg:col-span-8 bento-card p-6 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-2 h-2 rounded-full bg-[#65a30d]" />
+                      <span className="text-xs font-medium text-[#4d7c0f]">Sanction Approved</span>
+                    </div>
+                    <div className="text-3xl font-medium text-[#141513] font-mono mt-1">
+                      ₹{sanctionedAmt.toLocaleString("en-IN")}
+                    </div>
+                    <p className="text-xs text-[#8a877d] mt-0.5">
+                      {outcome.facility_type} · {outcome.bank_assigned} · Saves ₹{missSavings.toLocaleString("en-IN")}/yr under 4% MISS
                     </p>
-                  )}
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setIsDecisionTreeOpen(true)}
+                      className="px-3.5 py-1.5 rounded-full bg-[#fafaf6] border border-black/[0.08] text-xs font-medium text-[#141513] hover:bg-[#f0f0e8] flex items-center space-x-1"
+                    >
+                      <span>Decision Path</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("wallet")}
+                      className="px-3.5 py-1.5 rounded-full bg-[#141513] text-white text-xs font-medium hover:bg-black/85"
+                    >
+                      Vouchers ({outcome.tranches?.length || 0})
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setIsDecisionTreeOpen(true)}
-                    className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Inspect Decision Tree Path</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("wallet")}
-                    className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>View e-RUPI Vouchers ({outcome.tranches?.length || 0})</span>
-                  </button>
+                {/* Smooth Recharts AreaChart matching Soil Intelligence */}
+                <div className="h-56 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={harvestCurveData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="farmerExpectedGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#b8e354" stopOpacity={0.55} />
+                          <stop offset="95%" stopColor="#b8e354" stopOpacity={0.0} />
+                        </linearGradient>
+                        <linearGradient id="farmerStressGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#9cc0d1" stopOpacity={0.45} />
+                          <stop offset="95%" stopColor="#9cc0d1" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,21,19,0.06)" vertical={false} />
+                      <XAxis dataKey="stage" tick={{ fontSize: 11, fill: "#8a877d" }} axisLine={false} tickLine={false} />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "#8a877d" }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
+                        width={44}
+                      />
+                      <Tooltip
+                        formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`, ""]}
+                        contentStyle={{ fontSize: "12px", borderRadius: "12px", border: "1px solid rgba(20,21,19,0.08)" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="expected"
+                        name="Expected Inflow"
+                        stroke="#84cc16"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#farmerExpectedGrad)"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="stress"
+                        name="Drought Stress"
+                        stroke="#7aa2b8"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#farmerStressGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-600 flex items-center space-x-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" strokeWidth={1.5} />
-                  <span>XGBoost + SHAP Explainability Factors</span>
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {outcome.shap_reasons?.map((item, idx) => {
-                    const isPositive = item.direction === "RISK_DECREASE";
-                    return (
-                      <div
-                        key={idx}
-                        className={`p-4 rounded-xl border ${
-                          isPositive ? "bg-emerald-50/60 border-emerald-200" : "bg-amber-50/60 border-amber-200"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                          <span className={isPositive ? "text-emerald-900" : "text-amber-900"}>{item.name}</span>
+              {/* Right Column: Climate Gauge + Top 3 SHAP Reasons */}
+              <div className="lg:col-span-4 space-y-5">
+                <ClimateGaugeCard
+                  title="District Climate"
+                  subtitle={`${outcome.district} · Open-Meteo Live`}
+                  primaryValue={String(outcome.weather_profile?.avg_max_temp_c ?? 26.5)}
+                  unit="°C"
+                  progressRatio={Math.min(1, outcome.dscr_ratio / 2.2)}
+                  metric1Label="DSCR"
+                  metric1Val={`${outcome.dscr_ratio}x`}
+                  metric2Label="14d Rain"
+                  metric2Val={`${outcome.weather_profile?.forecast_14d_precip_mm ?? 0} mm`}
+                  metric3Label="Default PD"
+                  metric3Val={`${(outcome.pd_score * 100).toFixed(1)}%`}
+                  onExpand={() => setIsDecisionTreeOpen(true)}
+                />
+
+                <div className="bento-card p-5 space-y-3">
+                  <h3 className="text-sm font-medium text-[#141513]">Key Risk Factors (SHAP)</h3>
+                  <div className="space-y-2">
+                    {outcome.shap_reasons?.map((item, idx) => {
+                      const positive = item.direction === "RISK_DECREASE";
+                      return (
+                        <div key={idx} className="bento-surface-soft p-3 flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-medium text-[#141513]">{item.name}</div>
+                            <div className="text-[11px] text-[#5e5c55] mt-0.5">{item.text}</div>
+                          </div>
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold ${
-                              isPositive ? "bg-emerald-200 text-emerald-900" : "bg-amber-200 text-amber-900"
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-mono shrink-0 ${
+                              positive ? "bg-[#eef7d6] text-[#365314]" : "bg-amber-100 text-amber-900"
                             }`}
                           >
-                            {item.delta_pd_pct > 0 ? `+${item.delta_pd_pct}` : item.delta_pd_pct}% PD
+                            {item.delta_pd_pct > 0 ? `+${item.delta_pd_pct}` : item.delta_pd_pct}%
                           </span>
                         </div>
-                        <p className="text-xs text-slate-700 mt-1">{item.text}</p>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -913,98 +905,72 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
         </div>
       )}
 
-      {/* TAB 3: PURPOSE-LOCKED DIGITAL VOUCHER WALLET */}
+      {/* TAB 3: PURPOSE-LOCKED TRANCHES & E-RUPI WALLET */}
       {activeTab === "wallet" && (
-        <div className="space-y-6">
-          <div className="bg-slate-900 text-white rounded-xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center space-x-2 text-emerald-400 text-xs font-semibold">
-                <QrCode className="w-4 h-4" strokeWidth={1.5} />
-                <span>e-RUPI & Purpose-Locked Disbursal Wallet</span>
-              </div>
-              <h2 className="text-xl font-bold mt-1">3-Tranche Intended-Usage Enforcement</h2>
-              <p className="text-xs text-slate-300 mt-0.5 max-w-xl">
-                Ensures agricultural credit reaches certified seeds, fertilizers, and verified crop sowing without diversion.
-              </p>
-            </div>
-            <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-right">
-              <span className="text-[11px] text-slate-400">Sanction Total</span>
-              <div className="text-lg font-bold text-white font-mono">
-                ₹{sanctionedAmt.toLocaleString("en-IN")}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {outcome?.tranches?.map((tranche) => {
               const isRedeemed = tranche.status === "redeemed";
               const isDisbursed = tranche.status === "disbursed";
               return (
-                <div
-                  key={tranche.id}
-                  className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col justify-between"
-                >
-                  <div className="p-5 space-y-3">
+                <div key={tranche.id} className="bento-card p-6 flex flex-col justify-between space-y-5">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 font-mono">
-                        Tranche {tranche.tranche_no} ({tranche.percentage}%)
+                      <span className="text-xs font-mono text-[#8a877d]">
+                        Tranche {tranche.tranche_no} · {tranche.percentage}%
                       </span>
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold capitalize ${
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium capitalize ${
                           isRedeemed
-                            ? "bg-emerald-100 text-emerald-800"
+                            ? "bg-[#eef7d6] text-[#365314]"
                             : isDisbursed
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-amber-100 text-amber-800"
+                            ? "bg-[#e0eef5] text-[#1e4963]"
+                            : "bg-amber-100 text-amber-900"
                         }`}
                       >
                         {tranche.status}
                       </span>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900">{tranche.tranche_name}</h4>
-                      <div className="text-2xl font-bold text-slate-900 font-mono mt-1">
-                        ₹{Number(tranche.amount || 0).toLocaleString("en-IN")}
-                      </div>
+
+                    <div className="text-3xl font-medium text-[#141513] font-mono">
+                      ₹{Number(tranche.amount || 0).toLocaleString("en-IN")}
                     </div>
+                    <div className="text-sm font-medium text-[#141513]">{tranche.tranche_name}</div>
+
                     {tranche.voucher_code && (
-                      <div className="p-2 bg-slate-50 rounded border border-slate-200 text-xs font-mono text-slate-700">
-                        Code: <strong>{tranche.voucher_code}</strong>
+                      <div className="bento-surface-soft px-3 py-2 text-xs font-mono text-[#5e5c55]">
+                        {tranche.voucher_code}
                       </div>
                     )}
                     {tranche.merchant_name && (
-                      <div className="text-xs text-emerald-700 font-medium">
-                        Redeemed at: <strong>{tranche.merchant_name}</strong>
-                      </div>
+                      <div className="text-xs text-[#4d7c0f]">Redeemed: {tranche.merchant_name}</div>
                     )}
                   </div>
 
-                  <div className="p-4 bg-slate-50 border-t border-slate-200">
+                  <div className="pt-3 border-t border-black/[0.06]">
                     {tranche.tranche_no === 1 && (
                       <button
                         onClick={() => setActiveVoucherModal(tranche)}
-                        className="w-full py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5"
+                        className="w-full py-2.5 px-4 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium flex items-center justify-center space-x-1.5"
                       >
-                        <QrCode className="w-3.5 h-3.5" />
-                        <span>{isRedeemed ? "View Redemption Proof" : "Open e-RUPI QR Code"}</span>
+                        <QrCode className="w-3.5 h-3.5 text-[#d4f04c]" />
+                        <span>{isRedeemed ? "View Receipt" : "Open e-RUPI QR"}</span>
                       </button>
                     )}
                     {tranche.tranche_no === 2 && (
-                      <div className="text-center text-xs text-slate-600 font-medium py-1">
-                        Disbursed via UPI / Direct Account Credit
-                      </div>
+                      <div className="text-center text-xs text-[#5e5c55] py-2">UPI Direct Credit</div>
                     )}
                     {tranche.tranche_no === 3 && (
                       <div className="space-y-2">
                         {isDisbursed ? (
-                          <div className="text-center text-xs text-emerald-700 font-semibold py-1">
-                            Sowing Verified • 3% MISS Rebate Active
+                          <div className="text-center text-xs text-[#4d7c0f] font-medium py-2">
+                            Sowing Verified · 3% Rebate Active
                           </div>
                         ) : (
                           <>
-                            <label className="w-full py-2 px-3 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 cursor-pointer">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{sowingUploading ? "Uploading..." : "Upload Geo-Tagged Sowing Photo"}</span>
+                            <label className="w-full py-2.5 px-4 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer">
+                              <Upload className="w-3.5 h-3.5 text-[#d4f04c]" />
+                              <span>{sowingUploading ? "Uploading..." : "Upload Sowing Photo"}</span>
                               <input
                                 type="file"
                                 accept="image/*"
@@ -1015,9 +981,9 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                             <button
                               onClick={() => handleSowingProof(tranche.id)}
                               disabled={sowingUploading}
-                              className="w-full py-1.5 text-[11px] text-blue-700 hover:underline font-medium"
+                              className="w-full text-[11px] text-[#5e5c55] hover:text-[#141513]"
                             >
-                              Or simulate Digital Crop Survey GPS match
+                              Verify via GPS Survey
                             </button>
                           </>
                         )}
@@ -1030,133 +996,90 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
           </div>
 
           {sowingSuccess && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{sowingSuccess}</span>
-            </div>
+            <div className="bento-card p-4 text-xs text-[#365314] bg-[#eef7d6]">{sowingSuccess}</div>
           )}
         </div>
       )}
 
-      {/* TAB 4: GRIEVANCES & 7-DAY SLA TRACKER */}
+      {/* TAB 4: APPEALS & SLA */}
       {activeTab === "grievances" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-            <div className="border-b border-slate-200 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-                <span>File Grievance / Appeal</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Statutory 7-day bank SLA. Auto-escalates to Government Tribunal if unanswered.
-              </p>
-            </div>
-
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="lg:col-span-5 bento-card p-6 space-y-4">
+            <h3 className="text-[15px] font-medium text-[#141513]">File Appeal (7-Day SLA)</h3>
             <form onSubmit={handleGrievanceSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Grievance Category</label>
+                <label className="block text-xs text-[#5e5c55] mb-1.5">Category</label>
                 <select
                   value={grievanceCategory}
                   onChange={(e) => setGrievanceCategory(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md bg-white"
+                  className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
                 >
                   <option value="Collateral demanded under 2L">Collateral Demanded Under ₹2 Lakh</option>
                   <option value="Delayed disbursal >14 days">Delayed Disbursal Past 14 Days</option>
-                  <option value="Incorrect land area">Incorrect Land Holding / Khasra Error</option>
-                  <option value="Unfair rejection">Unfair Rejection of Flexi KCC / Sharecropper</option>
-                  <option value="Other">Other Operational Issue</option>
+                  <option value="Incorrect land area">Incorrect Land Area</option>
+                  <option value="Unfair rejection">Unfair Rejection</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <label className="block text-xs text-[#5e5c55] mb-1.5">Details</label>
                 <textarea
                   rows={4}
                   value={grievanceText}
                   onChange={(e) => setGrievanceText(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md"
-                  placeholder="Describe the discrepancy or SLA violation..."
+                  className="w-full px-3.5 py-2.5 text-xs bg-[#fafaf6] border border-black/[0.08] rounded-xl"
+                  placeholder="Describe the issue"
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Supporting Document (Supabase Storage / Local Vault)
-                </label>
+                <label className="block text-xs text-[#5e5c55] mb-1.5">Supporting Document</label>
                 <input
                   type="file"
                   onChange={handleGrievanceFileUpload}
-                  className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-slate-300 file:text-xs file:font-semibold file:bg-slate-50"
+                  className="w-full text-xs text-[#5e5c55] file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border file:border-black/10 file:text-xs file:bg-white"
                 />
-                <span className="text-[11px] text-slate-500 font-mono block mt-1">
-                  Attached: {grievanceDocName}
-                </span>
+                <span className="text-[11px] text-[#8a877d] font-mono mt-1 block">{grievanceDocName}</span>
               </div>
-
               {grievanceSuccess && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800">
-                  {grievanceSuccess}
-                </div>
+                <div className="p-3 bg-[#eef7d6] rounded-xl text-xs text-[#365314]">{grievanceSuccess}</div>
               )}
-
               <button
                 type="submit"
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold"
+                className="w-full py-2.5 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium"
               >
-                Submit Grievance to Bank & Govt Auditor
+                Submit Appeal
               </button>
             </form>
           </div>
 
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-            <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Active Grievances & Live SLA Timers</h3>
-                <p className="text-xs text-slate-500">Direct audit line across Farmer, Bank, and Govt</p>
-              </div>
-              <span className="text-xs px-2.5 py-1 bg-slate-100 rounded text-slate-700 font-mono">
-                {grievancesList.length} Registered
-              </span>
+          <div className="lg:col-span-7 bento-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[15px] font-medium text-[#141513]">Registered Appeals</h3>
+              <span className="text-xs font-mono text-[#8a877d]">{grievancesList.length}</span>
             </div>
-
             {grievancesList.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-400">
-                No active grievances registered for this application.
-              </div>
+              <div className="py-12 text-center text-xs text-[#8a877d]">No active appeals</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {grievancesList.map((g) => (
-                  <div key={g.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs font-bold text-slate-900">{g.category}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold capitalize ${
-                            g.resolution_status === "resolved"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : g.resolution_status === "escalated"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {g.resolution_status}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1 text-xs text-slate-500 font-mono">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{new Date(g.created_at).toLocaleDateString()}</span>
-                      </div>
+                  <div key={g.id} className="bento-surface-soft p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-[#141513]">{g.category}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium capitalize bg-white border border-black/[0.08] text-[#5e5c55]">
+                        {g.resolution_status}
+                      </span>
                     </div>
-                    <p className="text-xs text-slate-700">{g.grievance_text}</p>
-                    {g.bank_response && (
-                      <div className="p-2.5 bg-white border border-slate-200 rounded text-xs">
-                        <strong>Bank Response:</strong> {g.bank_response}
-                      </div>
-                    )}
+                    <p className="text-xs text-[#5e5c55]">{g.grievance_text}</p>
                     {g.govt_directive && (
-                      <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-900 font-medium">
-                        <strong>Binding Government Directive:</strong> {g.govt_directive}
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                        Directive: {g.govt_directive}
                       </div>
                     )}
+                    <div className="flex items-center space-x-1 text-[11px] text-[#8a877d] font-mono">
+                      <Clock className="w-3 h-3" />
+                      <span>{new Date(g.created_at).toLocaleDateString()}</span>
+                    </div>
                   </div>
                 ))}
               </div>
