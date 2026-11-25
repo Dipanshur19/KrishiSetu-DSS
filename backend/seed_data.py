@@ -308,7 +308,7 @@ def seed_database():
             sanction_amt = min(sanction_amt, 50000.0)
 
         # Forecast & DSCR
-        fc_res = calculate_forecast_and_dscr(land_dict, app_dict, sanction_amt, district)
+        fc_res = calculate_forecast_and_dscr(land_dict, app_dict, sanction_amt, district, use_live_weather=False)
 
         # Risk Model & SHAP
         risk_res = calculate_hybrid_risk_and_shap(farmer_dict, land_dict, liabilities_list, app_dict, fc_res)

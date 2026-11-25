@@ -1,0 +1,140 @@
+{
+  "metadata": {
+    "source_datasets": [
+      "ICRISAT District Level Database (DLD) - Uttar Pradesh Historical Yields",
+      "Commission for Agricultural Costs and Prices (CACP) MSP 2025-26",
+      "UP State Level Technical Committee (SLTC) Scale of Finance 2025-26",
+      "Open-Meteo Historical & 14-Day Weather Forecast Coordinates"
+    ],
+    "last_updated": "2026-11-25"
+  },
+  "districts": {
+    "Kanpur Dehat": {
+      "lat": 26.4046,
+      "lon": 79.9614,
+      "agro_climatic_zone": "Central Plain Zone",
+      "normal_14d_rain_mm": 18.5,
+      "normal_seasonal_rain_mm": 780.0,
+      "drought_baseline": "Moderate",
+      "yield_multiplier": 1.02
+    },
+    "Kanpur Nagar": {
+      "lat": 26.4499,
+      "lon": 80.3319,
+      "agro_climatic_zone": "Central Plain Zone",
+      "normal_14d_rain_mm": 19.0,
+      "normal_seasonal_rain_mm": 810.0,
+      "drought_baseline": "Low-Moderate",
+      "yield_multiplier": 1.05
+    },
+    "Unnao": {
+      "lat": 26.5393,
+      "lon": 80.4878,
+      "agro_climatic_zone": "Central Plain Zone",
+      "normal_14d_rain_mm": 20.0,
+      "normal_seasonal_rain_mm": 840.0,
+      "drought_baseline": "Low",
+      "yield_multiplier": 1.04
+    },
+    "Jhansi": {
+      "lat": 25.4484,
+      "lon": 78.5685,
+      "agro_climatic_zone": "Bundelkhand Zone",
+      "normal_14d_rain_mm": 11.0,
+      "normal_seasonal_rain_mm": 640.0,
+      "drought_baseline": "High (Bundelkhand Zone)",
+      "yield_multiplier": 0.84
+    },
+    "Lucknow": {
+      "lat": 26.8467,
+      "lon": 80.9462,
+      "agro_climatic_zone": "Central Plain Zone",
+      "normal_14d_rain_mm": 21.5,
+      "normal_seasonal_rain_mm": 890.0,
+      "drought_baseline": "Low",
+      "yield_multiplier": 1.06
+    },
+    "Barabanki": {
+      "lat": 26.9234,
+      "lon": 81.1904,
+      "agro_climatic_zone": "Eastern Plain / Terai Margin",
+      "normal_14d_rain_mm": 23.0,
+      "normal_seasonal_rain_mm": 960.0,
+      "drought_baseline": "Low",
+      "yield_multiplier": 1.08
+    },
+    "Fatehpur": {
+      "lat": 25.9209,
+      "lon": 80.8130,
+      "agro_climatic_zone": "Central Plain / Yamuna Belt",
+      "normal_14d_rain_mm": 16.5,
+      "normal_seasonal_rain_mm": 740.0,
+      "drought_baseline": "Moderate",
+      "yield_multiplier": 0.96
+    }
+  },
+  "crops": {
+    "Wheat": {
+      "season": "Rabi",
+      "scale_of_finance_per_acre": 24000,
+      "pmfby_farmer_premium_pct": 1.5,
+      "icrisat_base_yield_tonnes_acre": 1.85,
+      "msp_per_quintal": 2425,
+      "cost_of_cultivation_acre": 16000
+    },
+    "Paddy": {
+      "season": "Kharif",
+      "scale_of_finance_per_acre": 26000,
+      "pmfby_farmer_premium_pct": 2.0,
+      "icrisat_base_yield_tonnes_acre": 2.10,
+      "msp_per_quintal": 2300,
+      "cost_of_cultivation_acre": 18000
+    },
+    "Potato": {
+      "season": "Rabi",
+      "scale_of_finance_per_acre": 42000,
+      "pmfby_farmer_premium_pct": 5.0,
+      "icrisat_base_yield_tonnes_acre": 10.50,
+      "msp_per_quintal": 1250,
+      "cost_of_cultivation_acre": 32000
+    },
+    "Mustard": {
+      "season": "Rabi",
+      "scale_of_finance_per_acre": 18000,
+      "pmfby_farmer_premium_pct": 1.5,
+      "icrisat_base_yield_tonnes_acre": 0.78,
+      "msp_per_quintal": 5950,
+      "cost_of_cultivation_acre": 12000
+    },
+    "Sugarcane": {
+      "season": "Annual",
+      "scale_of_finance_per_acre": 48000,
+      "pmfby_farmer_premium_pct": 2.0,
+      "icrisat_base_yield_tonnes_acre": 32.5,
+      "msp_per_quintal": 370,
+      "cost_of_cultivation_acre": 35000
+    },
+    "Gram": {
+      "season": "Rabi",
+      "scale_of_finance_per_acre": 20000,
+      "pmfby_farmer_premium_pct": 2.0,
+      "icrisat_base_yield_tonnes_acre": 0.68,
+      "msp_per_quintal": 5650,
+      "cost_of_cultivation_acre": 14000
+    },
+    "Maize": {
+      "season": "Kharif",
+      "scale_of_finance_per_acre": 22000,
+      "pmfby_farmer_premium_pct": 2.0,
+      "icrisat_base_yield_tonnes_acre": 1.65,
+      "msp_per_quintal": 2225,
+      "cost_of_cultivation_acre": 15000
+    }
+  },
+  "allied_norms": {
+    "dairy_animal": 35000,
+    "fisheries_acre": 45000,
+    "poultry_100": 20000,
+    "sheep_goat_10": 25000
+  }
+}

@@ -24,6 +24,7 @@ ENV/
 *.db-journal
 *.db-wal
 *.db-shm
+backend/uploads/
 
 # IDE & OS
 .DS_Store

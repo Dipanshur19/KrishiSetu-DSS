@@ -13,14 +13,15 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Query, Body, Depends
+from fastapi import FastAPI, HTTPException, Query, Body, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from database import get_db_connection, init_db
+from supabase_client import get_backend_mode, upload_document_to_storage, LOCAL_UPLOAD_DIR, get_supabase_client
 from models.decision_tree import evaluate_decision_tree, SCALE_OF_FINANCE, ALLIED_UNIT_FINANCE
-from models.forecast_model import calculate_forecast_and_dscr, DISTRICT_WEATHER_PROFILE
+from models.forecast_model import calculate_forecast_and_dscr, DISTRICT_WEATHER_PROFILE, fetch_live_open_meteo_weather, DISTRICT_META
 from models.risk_model import calculate_hybrid_risk_and_shap
 from models.portfolio_optimizer import optimize_portfolio
 from models.voucher_system import generate_tranches_for_application, redeem_voucher, AUTHORIZED_AGRI_MERCHANTS
@@ -199,8 +200,77 @@ def optimize_allocate_endpoint(req: OptimizerRequest):
     return run_batch_optimizer(req)
 
 # -----------------------------------------------------------------------------
-# System & Demo Endpoints
+# System, Auth, Live Weather & File Upload Endpoints
 # -----------------------------------------------------------------------------
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: Optional[str] = "demo123"
+
+@app.get("/api/system/stack-status")
+def get_stack_status():
+    mode = get_backend_mode()
+    return {
+        **mode,
+        "ml_engine": "XGBoost + LogisticRegression + SHAP TreeExplainer",
+        "optimizer_engine": "scipy.optimize.milp (Mixed-Integer Linear Programming)",
+        "weather_api": "Open-Meteo Live 14-Day Forecast REST API",
+        "norms_dataset": "ICRISAT + CACP MSP 2025-26 + UP SLTC Scale of Finance JSON"
+    }
+
+@app.post("/api/auth/login")
+def login_rbac_demo(req: AuthLoginRequest):
+    """
+    Role-Based Access Control (RBAC) Login.
+    Uses Supabase Auth if configured, plus official DMS624 Week-4 demo accounts:
+    - farmer@demo (Farmer Portal)
+    - bank@demo   (Bank Officer Workbench)
+    - govt@demo   (Government Policy & Audit Console)
+    """
+    sb = get_supabase_client()
+    email_lower = req.email.strip().lower()
+
+    demo_map = {
+        "farmer@demo": {"role": "farmer", "username": "farmer_demo", "full_name": "Ram Charan Yadav", "district": "Kanpur Dehat", "branch_or_dept": "Akbarpur Branch", "application_id": 1},
+        "bank@demo": {"role": "bank_officer", "username": "bank_sbi", "full_name": "Rajesh Kumar Sharma (Lead Credit Manager)", "district": "Kanpur Dehat", "branch_or_dept": "SBI Regional Agri Hub"},
+        "govt@demo": {"role": "govt_auditor", "username": "govt_auditor", "full_name": "Dr. A. K. Srivastava (Joint Director, Agri Credit & Welfare)", "district": "Lucknow", "branch_or_dept": "UP Directorate of Institutional Finance"}
+    }
+
+    if email_lower in demo_map:
+        user_info = demo_map[email_lower]
+        return {
+            "status": "AUTHENTICATED",
+            "auth_provider": "supabase-rbac-demo" if sb else "rbac-demo-session",
+            "email": email_lower,
+            "access_token": f"krishisetu-rbac-{user_info['role']}-{uuid.uuid4().hex[:10]}",
+            "user": user_info
+        }
+
+    if sb:
+        try:
+            auth_res = sb.auth.sign_in_with_password({"email": email_lower, "password": req.password or ""})
+            return {
+                "status": "AUTHENTICATED",
+                "auth_provider": "supabase-auth",
+                "email": email_lower,
+                "access_token": auth_res.session.access_token,
+                "user": {"role": "farmer", "full_name": email_lower, "district": "Kanpur Dehat"}
+            }
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Supabase authentication failed: {str(e)}")
+
+    raise HTTPException(status_code=401, detail="Invalid credentials. Use farmer@demo, bank@demo, or govt@demo.")
+
+@app.get("/api/weather/live/{district}")
+def get_live_district_weather(district: str):
+    weather = fetch_live_open_meteo_weather(district, allow_network=True)
+    return {k: v for k, v in weather.items() if k != "_ts"}
+
+@app.post("/api/upload/file")
+async def upload_evidence_or_photo(file: UploadFile = File(...)):
+    content = await file.read()
+    res = upload_document_to_storage(file.filename or "evidence.bin", content, file.content_type or "application/octet-stream")
+    return {"status": "UPLOADED", **res}
+
 @app.get("/api/system/demo-accounts")
 def get_demo_accounts():
     conn = get_db_connection()
@@ -439,6 +509,8 @@ def get_farmer_application_outcome(app_id: int):
     res["tranches"] = [dict(t) for t in tranches]
     res["grievances"] = [dict(g) for g in grievances]
     res["liabilities"] = [dict(l) for l in liabilities]
+    weather_live = fetch_live_open_meteo_weather(res.get("district", "Kanpur Dehat"), allow_network=True)
+    res["weather_profile"] = {k: v for k, v in weather_live.items() if k != "_ts"}
     return res
 
 @app.post("/api/farmer/vouchers/redeem")
@@ -756,18 +828,25 @@ def get_district_heatmap():
         smf_sum = sum(float(a["sanctioned_amount"] or 0) for a in apps if a["status"] == "approved" and a["farmer_classification"] in ["Marginal", "Small"])
         smf_pct = round((smf_sum / sanctioned_sum * 100), 1) if sanctioned_sum > 0 else 0.0
 
-        weather = DISTRICT_WEATHER_PROFILE.get(dist, {"rainfall_anomaly_pct": -5.0, "drought_risk": "Moderate"})
+        weather = fetch_live_open_meteo_weather(dist, allow_network=True)
+        d_meta = DISTRICT_META.get(dist, {})
 
         result.append({
             "district": dist,
+            "lat": d_meta.get("lat", 26.45),
+            "lon": d_meta.get("lon", 80.33),
+            "agro_climatic_zone": d_meta.get("agro_climatic_zone", "Central Plain Zone"),
             "total_applications": total_d_apps,
             "approved_applications": approved_d,
             "allocated_budget": 5000000.0, # ₹50 Lakh district pool
             "sanctioned_amount": round(sanctioned_sum, 2),
             "smf_sanctioned_amount": round(smf_sum, 2),
             "smf_share_pct": smf_pct,
-            "weather_rainfall_anomaly": weather["rainfall_anomaly_pct"],
-            "drought_risk_classification": weather["drought_risk"],
+            "weather_source": weather.get("source", "open-meteo-live"),
+            "forecast_14d_precip_mm": weather.get("forecast_14d_precip_mm", 0.0),
+            "avg_max_temp_c": weather.get("avg_max_temp_c", 27.5),
+            "weather_rainfall_anomaly": weather.get("rainfall_anomaly_pct", -5.0),
+            "drought_risk_classification": weather.get("drought_risk", "Moderate"),
             "fldg_coverage_active": True if dist == "Jhansi" else False
         })
     conn.close()
@@ -877,8 +956,13 @@ def issue_tribunal_directive(id: int, req: EscalatedDirectiveRequest):
     }
 
 # -----------------------------------------------------------------------------
-# Static Files mount (Serves built React frontend)
+# Static Files mount (Uploaded files + Next.js static export or built frontend)
 # -----------------------------------------------------------------------------
-DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-if os.path.exists(DIST_DIR):
-    app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="static")
+app.mount("/uploads", StaticFiles(directory=LOCAL_UPLOAD_DIR), name="uploads")
+
+NEXT_OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "out")
+VITE_DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.exists(NEXT_OUT_DIR):
+    app.mount("/", StaticFiles(directory=NEXT_OUT_DIR, html=True), name="static")
+elif os.path.exists(VITE_DIST_DIR):
+    app.mount("/", StaticFiles(directory=VITE_DIST_DIR, html=True), name="static")

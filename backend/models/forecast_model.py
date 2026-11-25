@@ -1,25 +1,38 @@
 """
 KrishiSetu DSS - Cash-Flow & Agronomic Forecast Model
-Predicts whether farmer can repay from future agricultural output rather than past collateral.
+Hooks directly into:
+1. Open-Meteo Live 14-Day Weather Forecast REST API (free, no API key required)
+2. Seeded ICRISAT District Yields & CACP MSP Prices JSON (backend/data/icrisat_msp_sof.json)
+
 Calculates:
 - Expected Seasonal Net Revenue (R_hat)
 - Downside Drought Scenario (R_stress)
 - Debt Service Coverage Ratio (DSCR) using MISS 4% prompt repayment rate
 """
 
-from typing import Dict, Any, Tuple
-import math
+import json
+import os
+import time
+from typing import Dict, Any, Optional
+import httpx
 
-# District crop yield averages (tonnes per acre) and MSP rates (₹ per quintal = ₹ per 0.1 tonne)
-DISTRICT_CROP_NORMS = {
-    "Wheat": {"yield_tonnes_acre": 1.85, "msp_per_quintal": 2275.0, "cost_of_cultivation_acre": 16000.0},
-    "Paddy": {"yield_tonnes_acre": 2.10, "msp_per_quintal": 2183.0, "cost_of_cultivation_acre": 18000.0},
-    "Potato": {"yield_tonnes_acre": 10.50, "msp_per_quintal": 1250.0, "cost_of_cultivation_acre": 32000.0},
-    "Mustard": {"yield_tonnes_acre": 0.75, "msp_per_quintal": 5650.0, "cost_of_cultivation_acre": 12000.0},
-    "Sugarcane": {"yield_tonnes_acre": 32.0, "msp_per_quintal": 370.0, "cost_of_cultivation_acre": 35000.0},
-    "Gram": {"yield_tonnes_acre": 0.65, "msp_per_quintal": 5440.0, "cost_of_cultivation_acre": 14000.0},
-    "Maize": {"yield_tonnes_acre": 1.60, "msp_per_quintal": 2090.0, "cost_of_cultivation_acre": 15000.0},
-    "Default": {"yield_tonnes_acre": 1.20, "msp_per_quintal": 2200.0, "cost_of_cultivation_acre": 14000.0}
+DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icrisat_msp_sof.json")
+
+with open(DATA_FILE, "r", encoding="utf-8") as f:
+    _AGRI_DATA = json.load(f)
+
+DISTRICT_META = _AGRI_DATA["districts"]
+CROP_NORMS = _AGRI_DATA["crops"]
+
+# Exported for API compatibility
+DISTRICT_WEATHER_PROFILE = {
+    d: {
+        "lat": info["lat"],
+        "lon": info["lon"],
+        "rainfall_anomaly_pct": -22.0 if d == "Jhansi" else (-10.0 if d == "Fatehpur" else -4.0),
+        "drought_risk": info["drought_baseline"]
+    }
+    for d, info in DISTRICT_META.items()
 }
 
 # Irrigation multipliers for drought resistance
@@ -31,75 +44,145 @@ IRRIGATION_FACTORS = {
     "Dry": {"normal_multiplier": 0.75, "drought_retention": 0.35, "desc": "Pure rainfed farming; severe vulnerability to monsoon anomalies."}
 }
 
-# District climatic drought vulnerability weights (e.g. Bundelkhand / Jhansi vs Gangetic plains)
-DISTRICT_WEATHER_PROFILE = {
-    "Jhansi": {"rainfall_anomaly_pct": -22.0, "drought_risk": "High (Bundelkhand Zone)"},
-    "Kanpur Dehat": {"rainfall_anomaly_pct": -6.0, "drought_risk": "Moderate"},
-    "Kanpur Nagar": {"rainfall_anomaly_pct": -4.0, "drought_risk": "Low-Moderate"},
-    "Unnao": {"rainfall_anomaly_pct": -3.0, "drought_risk": "Low"},
-    "Lucknow": {"rainfall_anomaly_pct": 2.0, "drought_risk": "Low"},
-    "Barabanki": {"rainfall_anomaly_pct": 4.0, "drought_risk": "Low"},
-    "Fatehpur": {"rainfall_anomaly_pct": -10.0, "drought_risk": "Moderate"}
-}
+# In-memory TTL cache (15 minutes) so batch seeding and repeated API calls stay fast
+_WEATHER_CACHE: Dict[str, Dict[str, Any]] = {}
+_CACHE_TTL_SECONDS = 900
+
+def fetch_live_open_meteo_weather(district: str, allow_network: bool = True) -> Dict[str, Any]:
+    """
+    Makes a live REST call to Open-Meteo API for the given UP district's coordinates.
+    Returns 14-day cumulative precipitation forecast, max temp, daily time series,
+    and computed rainfall anomaly against historical ICRISAT/IMD district baseline.
+    """
+    d_info = DISTRICT_META.get(district, DISTRICT_META["Kanpur Dehat"])
+    now = time.time()
+
+    if district in _WEATHER_CACHE and (now - _WEATHER_CACHE[district]["_ts"] < _CACHE_TTL_SECONDS):
+        return _WEATHER_CACHE[district]
+
+    baseline_14d_mm = float(d_info.get("normal_14d_rain_mm", 18.0))
+    fallback_anomaly = -22.0 if district == "Jhansi" else (-10.0 if district == "Fatehpur" else -4.0)
+
+    if allow_network:
+        try:
+            url = (
+                f"https://api.open-meteo.com/v1/forecast"
+                f"?latitude={d_info['lat']}&longitude={d_info['lon']}"
+                f"&daily=precipitation_sum,temperature_2m_max&forecast_days=14&timezone=Asia/Kolkata"
+            )
+            with httpx.Client(timeout=4.0) as client:
+                resp = client.get(url)
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    daily = payload.get("daily", {})
+                    dates = daily.get("time", [])
+                    precip = daily.get("precipitation_sum", [])
+                    tmax = daily.get("temperature_2m_max", [])
+
+                    total_14d_precip = round(sum(float(p or 0.0) for p in precip), 2)
+                    avg_tmax = round(sum(float(t or 28.0) for t in tmax) / max(1, len(tmax)), 1)
+                    # Compute anomaly bounded nicely for crop model calibration
+                    raw_anomaly_pct = ((total_14d_precip - baseline_14d_mm) / max(1.0, baseline_14d_mm)) * 100.0
+                    # Blend short-term 14-day anomaly with regional climatic baseline so dry winter weeks don't show 100% drought falsely
+                    blended_anomaly = round(0.35 * max(-45.0, min(35.0, raw_anomaly_pct)) + 0.65 * fallback_anomaly, 1)
+
+                    result = {
+                        "_ts": now,
+                        "source": "open-meteo-live",
+                        "district": district,
+                        "latitude": d_info["lat"],
+                        "longitude": d_info["lon"],
+                        "forecast_14d_precip_mm": total_14d_precip,
+                        "baseline_14d_precip_mm": baseline_14d_mm,
+                        "avg_max_temp_c": avg_tmax,
+                        "rainfall_anomaly_pct": blended_anomaly,
+                        "drought_risk": d_info["drought_baseline"],
+                        "daily_series": [
+                            {"date": dt, "precip_mm": float(pr or 0.0), "temp_max_c": float(tm or 26.0)}
+                            for dt, pr, tm in zip(dates, precip, tmax)
+                        ]
+                    }
+                    _WEATHER_CACHE[district] = result
+                    return result
+        except Exception:
+            pass
+
+    # Graceful offline/seed fallback
+    fallback = {
+        "_ts": now,
+        "source": "icrisat-climate-baseline",
+        "district": district,
+        "latitude": d_info["lat"],
+        "longitude": d_info["lon"],
+        "forecast_14d_precip_mm": round(baseline_14d_mm * (1.0 + fallback_anomaly / 100.0), 1),
+        "baseline_14d_precip_mm": baseline_14d_mm,
+        "avg_max_temp_c": 27.5,
+        "rainfall_anomaly_pct": fallback_anomaly,
+        "drought_risk": d_info["drought_baseline"],
+        "daily_series": []
+    }
+    _WEATHER_CACHE[district] = fallback
+    return fallback
 
 def calculate_forecast_and_dscr(
     land: Dict[str, Any],
     application: Dict[str, Any],
     sanction_amount: float,
-    district: str = "Kanpur Dehat"
+    district: str = "Kanpur Dehat",
+    use_live_weather: bool = True
 ) -> Dict[str, Any]:
     """
-    Computes Expected Revenue R_hat, Drought Stress Revenue R_stress, and DSCR.
+    Computes Expected Revenue R_hat, Drought Stress Revenue R_stress, and DSCR
+    using Open-Meteo rainfall forecasts and ICRISAT/MSP norms.
     """
     area_acres = float(land.get("area_acres", 1.0))
     irrigation_source = land.get("irrigation_source", "Well")
     primary_crop = application.get("primary_crop", "Wheat")
-    
-    crop_norm = DISTRICT_CROP_NORMS.get(primary_crop, DISTRICT_CROP_NORMS["Default"])
-    irrig_info = IRRIGATION_FACTORS.get(irrigation_source, IRRIGATION_FACTORS["Well"])
-    weather_info = DISTRICT_WEATHER_PROFILE.get(district, {"rainfall_anomaly_pct": -5.0, "drought_risk": "Moderate"})
 
-    # Yield in quintals (1 tonne = 10 quintals)
-    base_yield_quintals = crop_norm["yield_tonnes_acre"] * 10.0 * area_acres
-    adjusted_yield = base_yield_quintals * irrig_info["normal_multiplier"]
-    
-    # Gross Crop Revenue
+    crop_norm = CROP_NORMS.get(primary_crop, CROP_NORMS["Wheat"])
+    district_info = DISTRICT_META.get(district, DISTRICT_META["Kanpur Dehat"])
+    irrig_info = IRRIGATION_FACTORS.get(irrigation_source, IRRIGATION_FACTORS["Well"])
+    weather_info = fetch_live_open_meteo_weather(district, allow_network=use_live_weather)
+
+    # Yield in quintals (1 tonne = 10 quintals) adjusted by ICRISAT district factor & irrigation
+    base_yield_quintals = (
+        crop_norm["icrisat_base_yield_tonnes_acre"]
+        * district_info.get("yield_multiplier", 1.0)
+        * 10.0
+        * area_acres
+    )
+
+    # Adjust slightly for live rainfall anomaly when irrigation is Dry/Well
+    rain_sensitivity = 0.25 if irrigation_source == "Dry" else (0.10 if irrigation_source == "Well" else 0.03)
+    weather_yield_adj = 1.0 + (weather_info["rainfall_anomaly_pct"] / 100.0) * rain_sensitivity
+    adjusted_yield = base_yield_quintals * irrig_info["normal_multiplier"] * max(0.75, min(1.15, weather_yield_adj))
+
     gross_crop_revenue = adjusted_yield * crop_norm["msp_per_quintal"]
     cultivation_cost = crop_norm["cost_of_cultivation_acre"] * area_acres
     net_crop_revenue = max(0.0, gross_crop_revenue - cultivation_cost)
 
-    # Allied sector revenue (dairy: ~₹2,500/month net profit per milch animal * 12 = ₹30,000/year)
     livestock_count = int(land.get("livestock_count", 0))
     allied_annual_income = livestock_count * 30000.0
-
-    # Non-farm income (off-season labor / petty shop / transport)
     non_farm_income = 25000.0 if area_acres <= 2.5 else 10000.0
-
-    # Estimated annual household living expense (baseline ₹4,000/month for marginal, ₹6,000 for small)
     household_living_expense = 48000.0 if area_acres <= 2.5 else 72000.0
 
-    # Total Expected Seasonal/Annual Net Inflow
     R_hat = net_crop_revenue + allied_annual_income + non_farm_income
 
-    # Drought stress scenario: severe rain deficiency (-35%)
+    # Drought stress scenario (-35% seasonal deficit)
     drought_yield = base_yield_quintals * irrig_info["drought_retention"]
     drought_gross_revenue = drought_yield * crop_norm["msp_per_quintal"]
-    # Even under drought, PMFBY crop insurance pays out if enrolled
     pmfby_optin = application.get("pmfby_optin", True)
     pmfby_payout = (cultivation_cost * 0.70) if pmfby_optin else 0.0
 
     drought_net_crop_revenue = max(0.0, drought_gross_revenue - (cultivation_cost * 0.85) + pmfby_payout)
     R_stress = drought_net_crop_revenue + (allied_annual_income * 0.85) + non_farm_income
 
-    # Debt Service Obligations
-    # MISS: 4% effective prompt repayment rate vs 7% standard rate
     principal = float(sanction_amount)
     effective_interest = principal * 0.04
     standard_interest = principal * 0.07
     total_debt_service_miss = principal + effective_interest
     total_debt_service_std = principal + standard_interest
 
-    # Cash available for debt service (CADS)
     cads_normal = max(1000.0, R_hat - household_living_expense)
     cads_stress = max(500.0, R_stress - household_living_expense)
 
@@ -107,7 +190,6 @@ def calculate_forecast_and_dscr(
     dscr_stress = round(cads_stress / total_debt_service_miss, 2) if total_debt_service_miss > 0 else 1.2
     dscr_standard = round(cads_normal / total_debt_service_std, 2) if total_debt_service_std > 0 else 2.1
 
-    # Quality verdict
     if dscr_miss >= 1.5:
         verdict = "EXCELLENT_COVERAGE"
         verdict_desc = f"DSCR of {dscr_miss:.2f} indicates robust cash flow buffer even after living expenses."
@@ -135,6 +217,6 @@ def calculate_forecast_and_dscr(
         "debt_service_obligation": round(total_debt_service_miss, 2),
         "verdict": verdict,
         "verdict_desc": verdict_desc,
-        "weather_profile": weather_info,
+        "weather_profile": {k: v for k, v in weather_info.items() if k != "_ts"},
         "irrigation_profile": irrig_info
     }

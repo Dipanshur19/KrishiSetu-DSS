@@ -1,34 +1,49 @@
 """
 KrishiSetu DSS - Explainable Decision Tree Engine
 RBI & Government Policy Eligibility & Instrument Routing Module
-Aligned with:
-- RBI Master Circular on Priority Sector Lending (PSL)
-- RBI Master Directions - KCC (2025/2026 guidelines)
-- Modified Interest Subvention Scheme (MISS)
+Loads official UP District Scale of Finance & Allied norms from seeded JSON.
 """
 
-from typing import Dict, Any, Tuple, List
+import json
+import os
+from typing import Dict, Any, List
 
-# Official Scale of Finance (₹ per acre) for key crops in UP districts (Kanpur, Unnao, Jhansi, etc.)
+DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icrisat_msp_sof.json")
+
+def _load_norms() -> Dict[str, Any]:
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+_NORMS = _load_norms()
+
 SCALE_OF_FINANCE = {
-    "Wheat": {"base_cost": 24000, "crop_type": "Rabi", "insurance_pct": 1.5},
-    "Paddy": {"base_cost": 26000, "crop_type": "Kharif", "insurance_pct": 2.0},
-    "Potato": {"base_cost": 42000, "crop_type": "Rabi", "insurance_pct": 5.0},
-    "Mustard": {"base_cost": 18000, "crop_type": "Rabi", "insurance_pct": 1.5},
-    "Sugarcane": {"base_cost": 48000, "crop_type": "Annual", "insurance_pct": 2.0},
-    "Gram": {"base_cost": 20000, "crop_type": "Rabi", "insurance_pct": 2.0},
-    "Maize": {"base_cost": 22000, "crop_type": "Kharif", "insurance_pct": 2.0},
-    "Vegetables": {"base_cost": 35000, "crop_type": "Zaid/Kharif", "insurance_pct": 5.0},
-    "Fodder/Default": {"base_cost": 15000, "crop_type": "All", "insurance_pct": 2.0}
+    crop: {
+        "base_cost": info["scale_of_finance_per_acre"],
+        "crop_type": info["season"],
+        "insurance_pct": info["pmfby_farmer_premium_pct"]
+    }
+    for crop, info in _NORMS.get("crops", {}).items()
 }
+if not SCALE_OF_FINANCE:
+    SCALE_OF_FINANCE = {
+        "Wheat": {"base_cost": 24000, "crop_type": "Rabi", "insurance_pct": 1.5},
+        "Paddy": {"base_cost": 26000, "crop_type": "Kharif", "insurance_pct": 2.0},
+        "Potato": {"base_cost": 42000, "crop_type": "Rabi", "insurance_pct": 5.0},
+        "Mustard": {"base_cost": 18000, "crop_type": "Rabi", "insurance_pct": 1.5},
+        "Sugarcane": {"base_cost": 48000, "crop_type": "Annual", "insurance_pct": 2.0},
+        "Gram": {"base_cost": 20000, "crop_type": "Rabi", "insurance_pct": 2.0},
+        "Maize": {"base_cost": 22000, "crop_type": "Kharif", "insurance_pct": 2.0},
+    }
+SCALE_OF_FINANCE["Fodder/Default"] = {"base_cost": 15000, "crop_type": "All", "insurance_pct": 2.0}
 
-# Allied Sector Unit Finance norms (RBI KCC Allied Norms)
-ALLIED_UNIT_FINANCE = {
-    "dairy_animal": 35000,      # per cow/buffalo
-    "fisheries_acre": 45000,    # per acre pond
-    "poultry_100": 20000,       # per 100 birds
-    "sheep_goat_10": 25000      # per unit of 10
-}
+ALLIED_UNIT_FINANCE = _NORMS.get("allied_norms", {
+    "dairy_animal": 35000,
+    "fisheries_acre": 45000,
+    "poultry_100": 20000,
+    "sheep_goat_10": 25000
+})
 
 def evaluate_decision_tree(
     farmer: Dict[str, Any],
@@ -38,29 +53,15 @@ def evaluate_decision_tree(
     policy: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Executes the 4-step Explainable Decision Tree:
-    Returns {
-        "status": "ELIGIBLE" | "REJECTED" | "ROUTED_DEBT_SWAP",
-        "farmer_category": "Marginal" | "Small" | "Other",
-        "instrument": "Flexi KCC" | "Collateral-Free KCC" | "Collateral Required KCC" | "Term Loan",
-        "scale_of_finance_limit": float,
-        "collateral_required": bool,
-        "weaker_section_eligible": bool,
-        "debt_swap_recommended": bool,
-        "interest_rate_effective": float, # 4% with MISS vs 7%
-        "steps_log": List[Dict[str, Any]],
-        "reasons": List[str]
-    }
+    Executes the 4-step Explainable Decision Tree against RBI PSL & KCC Rules.
     """
     steps_log = []
     reasons = []
 
-    # ----------------------------------------------------
     # Step 1: Farmer Classification (Acres -> Hectares)
-    # ----------------------------------------------------
     area_acres = float(land.get("area_acres", 1.0))
     area_hectares = area_acres / 2.47105
-    
+
     if area_hectares <= 1.0:
         farmer_category = "Marginal"
         category_desc = f"{area_acres:.2f} acres ({area_hectares:.2f} ha) <= 1.0 ha: Classified as Marginal Farmer (RBI PSL priority)."
@@ -80,13 +81,10 @@ def evaluate_decision_tree(
         "data": {"area_acres": area_acres, "area_ha": round(area_hectares, 3)}
     })
 
-    # Weaker section check (SC/ST, women, PWD, or debt distressed)
     social_cat = farmer.get("social_category", "GEN")
     is_weaker = social_cat in ["SC", "ST", "Women", "PWD", "Minority"] or (farmer_category in ["Marginal", "Small"])
 
-    # ----------------------------------------------------
     # Step 2: Hard Compliance & Duplication Check
-    # ----------------------------------------------------
     has_wilful_default = False
     has_commercial_npa = False
     has_informal_debt_only = False
@@ -127,7 +125,6 @@ def evaluate_decision_tree(
 
     debt_swap_recommended = False
     if has_informal_debt_only and not has_commercial_npa:
-        # Route to Weaker Section Debt-Swap tier
         debt_swap_recommended = True
         compliance_result = "ROUTED_DEBT_SWAP"
         compliance_details = "Overdue is to informal moneylenders only. Routed to RBI Weaker Section Debt-Swap Facility to free farmer from distress."
@@ -149,15 +146,13 @@ def evaluate_decision_tree(
         "data": {"total_overdue": total_overdue, "debt_swap_recommended": debt_swap_recommended}
     })
 
-    # ----------------------------------------------------
     # Step 3: Instrument & Collateral Routing
-    # ----------------------------------------------------
     ownership_type = land.get("ownership_type", "owned")
     requested_amount = float(application.get("requested_amount", 50000.0))
     marketing_tieup = application.get("marketing_tieup", "None")
     has_tieup = marketing_tieup in ["Cooperative", "Government_Procurement", "Corporate_Contract"]
-    collateral_free_threshold = float(policy.get("collateral_free_threshold", 200000.0)) # ₹2 Lakh
-    collateral_free_tieup_threshold = float(policy.get("collateral_free_tieup_threshold", 300000.0)) # ₹3 Lakh
+    collateral_free_threshold = float(policy.get("collateral_free_threshold", 200000.0))
+    collateral_free_tieup_threshold = float(policy.get("collateral_free_tieup_threshold", 300000.0))
 
     if ownership_type in ["oral_lease", "sharecropper"]:
         instrument = "Flexi KCC"
@@ -193,33 +188,23 @@ def evaluate_decision_tree(
         }
     })
 
-    # ----------------------------------------------------
     # Step 4: RBI Scale-of-Finance Credit Limit Calculation
-    # ----------------------------------------------------
     primary_crop = application.get("primary_crop", "Wheat")
     crop_info = SCALE_OF_FINANCE.get(primary_crop, SCALE_OF_FINANCE["Fodder/Default"])
     base_sof_per_acre = crop_info["base_cost"]
-    
-    # Scale of finance for crop component
+
     crop_limit = base_sof_per_acre * area_acres
-    
-    # 10% for post-harvest / household living expenses
     post_harvest_allowance = 0.10 * crop_limit
-    
-    # 20% for farm maintenance, repairs, and machinery upkeep
     farm_upkeep_allowance = 0.20 * crop_limit
-    
-    # PMFBY Insurance Premium component
+
     pmfby_optin = application.get("pmfby_optin", True)
     insurance_premium = (crop_info["insurance_pct"] / 100.0) * crop_limit if pmfby_optin else 0.0
 
-    # Allied component
     livestock_count = int(land.get("livestock_count", 0))
-    allied_limit = livestock_count * ALLIED_UNIT_FINANCE["dairy_animal"]
+    allied_limit = livestock_count * ALLIED_UNIT_FINANCE.get("dairy_animal", 35000)
 
     total_scale_of_finance_limit = crop_limit + post_harvest_allowance + farm_upkeep_allowance + insurance_premium + allied_limit
 
-    # Cap if Flexi KCC
     if instrument == "Flexi KCC":
         flexi_max = float(policy.get("flexi_kcc_max", 50000.0))
         flexi_min = float(policy.get("flexi_kcc_min", 10000.0))
@@ -247,8 +232,9 @@ def evaluate_decision_tree(
         }
     })
 
-    # Effective interest calculation (MISS: 7% base, 3% prompt repayment incentive = 4% net)
-    interest_rate_effective = 4.0 if requested_amount <= 300000.0 else 7.0
+    miss_subvention = float(policy.get("interest_subvention_pct", 3.0))
+    miss_base = float(policy.get("miss_base_rate", 7.0))
+    interest_rate_effective = max(2.0, miss_base - miss_subvention) if requested_amount <= 300000.0 else miss_base
 
     return {
         "status": "ELIGIBLE",

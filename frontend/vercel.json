@@ -1,15 +1,21 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
+  "framework": "nextjs",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://krishisetu-dss.onrender.com/api/$1"
+      "source": "/api/:path*",
+      "destination": "https://krishisetu-dss.onrender.com/api/:path*"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/evaluate/:path*",
+      "destination": "https://krishisetu-dss.onrender.com/evaluate/:path*"
+    },
+    {
+      "source": "/optimize/:path*",
+      "destination": "https://krishisetu-dss.onrender.com/optimize/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://krishisetu-dss.onrender.com/uploads/:path*"
     }
   ]
 }
