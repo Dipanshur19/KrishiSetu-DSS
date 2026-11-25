@@ -9,7 +9,7 @@ import os
 import re
 from typing import Any, Optional
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "krishisetu.db")
+DB_PATH = os.environ.get("KRISHISETU_DB_PATH") or os.path.join(os.path.dirname(__file__), "krishisetu.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 
@@ -291,6 +291,29 @@ def init_db():
         ) VALUES (0.556, 0.35, 3.0, 7.0, 200000.0, 300000.0, 10000.0, 50000.0, 0.045);
         """)
 
+    cursor.execute(f"""CREATE TABLE IF NOT EXISTS workspace_sessions (
+        id {pk}, token_hash TEXT UNIQUE NOT NULL, principal TEXT NOT NULL, expires_at TEXT NOT NULL)""")
+    cursor.execute(f"""CREATE TABLE IF NOT EXISTS application_intake (
+        id {pk}, application_id INTEGER UNIQUE NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
+        payload TEXT NOT NULL, district TEXT NOT NULL, social_category TEXT NOT NULL, full_name TEXT NOT NULL,
+        area_acres {real_t} NOT NULL, net_worth {real_t} NOT NULL, review_reason TEXT NOT NULL,
+        decision_note TEXT, policy_id INTEGER, request_key TEXT UNIQUE)""")
+    cursor.execute(f"""CREATE TABLE IF NOT EXISTS review_decisions (
+        id {pk}, application_id INTEGER NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
+        actor TEXT NOT NULL, action TEXT NOT NULL, reason TEXT NOT NULL, created_at {ts})""")
+    cursor.execute(f"""CREATE TABLE IF NOT EXISTS allocation_runs (
+        id {pk}, bank TEXT NOT NULL, policy_id INTEGER NOT NULL, selected_ids TEXT NOT NULL,
+        state TEXT NOT NULL, created_at {ts}, committed_by TEXT)""")
+    cursor.execute(f"""CREATE TABLE IF NOT EXISTS evidence_files (
+        id {pk}, reference TEXT UNIQUE NOT NULL, farmer_id INTEGER NOT NULL, media_type TEXT NOT NULL, content {"BYTEA" if DATABASE_URL else "BLOB"} NOT NULL)""")
+    if DATABASE_URL:
+        cursor.execute("ALTER TABLE users_and_roles ADD COLUMN IF NOT EXISTS auth_uid UUID UNIQUE")
+        cursor.execute('DROP POLICY IF EXISTS "Bank & Govt Read All Applications" ON loan_applications')
+        cursor.execute('DROP POLICY IF EXISTS "Farmers Read Own Applications" ON loan_applications')
+        for table in ("farmer_profiles","loan_applications","grievances_and_policy_logs","workspace_sessions","application_intake","allocation_runs","evidence_files","review_decisions",
+                      "users_and_roles","land_and_allied_assets","existing_liabilities","dss_evaluations",
+                      "fund_tranches_and_usage","govt_policy_parameters"):
+            cursor.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
     conn.commit()
     conn.close()
     print("KrishiSetu Database initialized successfully.")

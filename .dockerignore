@@ -1,0 +1,9 @@
+.git
+frontend/node_modules
+frontend/.next
+frontend/out
+backend/*.db*
+backend/uploads
+**/__pycache__
+*.pdf
+*.png

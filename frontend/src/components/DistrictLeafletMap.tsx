@@ -10,8 +10,8 @@ interface DistrictLeafletMapProps {
 }
 
 function getMarkerStyle(d: DistrictHeatmapRow, isSelected: boolean) {
-  const isHighRisk = d.weather_rainfall_anomaly < -15 || d.fldg_coverage_active;
-  const isCompliant = d.smf_share_pct >= 55.6;
+  const isHighRisk = d.weather_rainfall_anomaly < -15;
+  const isCompliant = d.smf_share_pct >= d.smf_target_pct;
   const color = isHighRisk ? "#d97706" : isCompliant ? "#4d7c0f" : "#5b8fa8";
   return {
     radius: isSelected ? 15 : 11,

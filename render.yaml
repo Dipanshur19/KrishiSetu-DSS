@@ -1,13 +1,11 @@
 services:
   - type: web
     name: krishisetu-dss
-    env: python
+    runtime: docker
     region: oregon
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python run_server.py"
     envVars:
-      - key: PORT
-        value: 10000
-      - key: PYTHON_VERSION
-        value: 3.11.9
+      - key: KRISHISETU_DEMO
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"

@@ -18,7 +18,7 @@ s.t.
 
 from typing import List, Dict, Any, Tuple
 import numpy as np
-from scipy.optimize import milp, LinearConstraint, Bounds, linprog
+from scipy.optimize import milp, LinearConstraint, Bounds
 
 def optimize_portfolio(
     applications: List[Dict[str, Any]],
@@ -143,36 +143,24 @@ def optimize_portfolio(
     # Decision variables x_i in {0, 1}
     integrality = np.ones(n) # binary variables
     bounds = Bounds(0.0, 1.0)
-    constraints = LinearConstraint(A_ub, -np.inf, b_ub)
 
-    try:
-        res = milp(c=c, integrality=integrality, bounds=bounds, constraints=constraints)
-        if res.success:
-            x_dss = np.round(res.x)
-        else:
-            # Fallback to relaxed linprog if exact binary integer has no feasible solution
-            res_lp = linprog(c=c, A_ub=A_ub, b_ub=b_ub, bounds=(0, 1), method="highs")
-            if res_lp.success:
-                x_dss = np.where(res_lp.x > 0.45, 1.0, 0.0)
-            else:
-                x_dss = _greedy_fallback(L, equity_scores, pd_arr, is_smf, total_fund_budget, smf_quota_alpha)
-    except Exception:
-        x_dss = _greedy_fallback(L, equity_scores, pd_arr, is_smf, total_fund_budget, smf_quota_alpha)
+    def solve(objective, matrix, limits):
+        try:
+            result = milp(c=objective, integrality=integrality, bounds=bounds,
+                          constraints=LinearConstraint(matrix, -np.inf, limits))
+        except (ValueError, RuntimeError):
+            return np.zeros(n), False
+        if not result.success or result.x is None:
+            return np.zeros(n), False
+        selected = np.rint(result.x)
+        valid = (np.all((selected == 0) | (selected == 1)) and
+                 np.all(np.asarray(matrix) @ selected <= np.asarray(limits) + 1e-6))
+        return (selected, True) if valid else (np.zeros(n), False)
 
-    # -------------------------------------------------------------------------
-    # Also Compute Unconstrained "Pure Profit Allocation" (No Policy Constraints)
-    # Banks choosing purely by lowest risk and highest loan size
-    # -------------------------------------------------------------------------
-    c_profit = -(expected_return_rupees - 1.5 * pd_arr * lgd_arr * L)
-    A_profit = [L]
-    b_profit = [total_fund_budget]
-    try:
-        res_prof = milp(c=c_profit, integrality=integrality, bounds=bounds, constraints=LinearConstraint(A_profit, -np.inf, b_profit))
-        x_profit = np.round(res_prof.x) if res_prof.success else _greedy_profit(L, pd_arr, total_fund_budget)
-    except Exception:
-        x_profit = _greedy_profit(L, pd_arr, total_fund_budget)
+    x_dss, solved = solve(c, A_ub, b_ub)
+    x_profit, baseline_solved = solve(-(expected_return_rupees - 1.5 * pd_arr * lgd_arr * L),
+                                      [L], [total_fund_budget])
 
-    # -------------------------------------------------------------------------
     # Compute Comparison Metrics
     # -------------------------------------------------------------------------
     dss_indices = [i for i in range(n) if x_dss[i] > 0.5]
@@ -184,7 +172,8 @@ def optimize_portfolio(
     )
 
     return {
-        "status": "OPTIMAL",
+        "status": ("OPTIMAL" if dss_indices else "NO_ALLOCATION") if solved else "SOLVER_ERROR",
+        "baseline_status": "OPTIMAL" if baseline_solved else "SOLVER_ERROR",
         "dss_allocated_ids": [app_ids[i] for i in dss_indices],
         "pure_profit_ids": [app_ids[i] for i in profit_indices],
         "total_applicants": n,
@@ -204,23 +193,23 @@ def _compute_allocation_metrics(
     gamma, total_budget, smf_alpha, npa_cap
 ) -> Dict[str, Any]:
     # DSS Metrics
-    dss_total_loan = float(np.sum(L * x_dss)) or 1.0
+    dss_total_loan = float(np.sum(L * x_dss))
     dss_smf_loan = float(np.sum(L * x_dss * is_smf))
-    dss_smf_pct = (dss_smf_loan / dss_total_loan) * 100.0
+    dss_smf_pct = (dss_smf_loan / (dss_total_loan or 1.0)) * 100.0
     dss_weaker_loan = float(np.sum(L * x_dss * is_weaker))
-    dss_weaker_pct = (dss_weaker_loan / dss_total_loan) * 100.0
-    dss_net_npa = (float(np.sum(pd_arr * lgd_net * L * x_dss)) / dss_total_loan) * 100.0
+    dss_weaker_pct = (dss_weaker_loan / (dss_total_loan or 1.0)) * 100.0
+    dss_net_npa = (float(np.sum(pd_arr * lgd_net * L * x_dss)) / (dss_total_loan or 1.0)) * 100.0
     dss_govt_guarantee_payout = float(np.sum(gamma * pd_arr * lgd_arr * L * is_smf * x_dss))
     dss_smf_farmers_count = int(np.sum(x_dss * is_smf))
     dss_total_farmers_count = int(np.sum(x_dss))
 
     # Pure Profit Metrics
-    prof_total_loan = float(np.sum(L * x_profit)) or 1.0
+    prof_total_loan = float(np.sum(L * x_profit))
     prof_smf_loan = float(np.sum(L * x_profit * is_smf))
-    prof_smf_pct = (prof_smf_loan / prof_total_loan) * 100.0
+    prof_smf_pct = (prof_smf_loan / (prof_total_loan or 1.0)) * 100.0
     prof_weaker_loan = float(np.sum(L * x_profit * is_weaker))
-    prof_weaker_pct = (prof_weaker_loan / prof_total_loan) * 100.0
-    prof_net_npa = (float(np.sum(pd_arr * lgd_arr * L * x_profit)) / prof_total_loan) * 100.0
+    prof_weaker_pct = (prof_weaker_loan / (prof_total_loan or 1.0)) * 100.0
+    prof_net_npa = (float(np.sum(pd_arr * lgd_arr * L * x_profit)) / (prof_total_loan or 1.0)) * 100.0
     prof_smf_farmers_count = int(np.sum(x_profit * is_smf))
     prof_total_farmers_count = int(np.sum(x_profit))
 
@@ -253,26 +242,3 @@ def _compute_allocation_metrics(
             "bank_risk_neutralized_by_fldg": round(dss_govt_guarantee_payout, 2)
         }
     }
-
-def _greedy_fallback(L, equity, pd_arr, is_smf, budget, alpha):
-    # Sort by equity / (PD * L)
-    score = equity / (np.maximum(pd_arr, 0.02) * np.sqrt(L))
-    sorted_idx = np.argsort(-score)
-    x = np.zeros(len(L))
-    curr_budget = 0.0
-    for idx in sorted_idx:
-        if curr_budget + L[idx] <= budget:
-            x[idx] = 1.0
-            curr_budget += L[idx]
-    return x
-
-def _greedy_profit(L, pd_arr, budget):
-    # Sort by lowest PD
-    sorted_idx = np.argsort(pd_arr)
-    x = np.zeros(len(L))
-    curr_budget = 0.0
-    for idx in sorted_idx:
-        if curr_budget + L[idx] <= budget:
-            x[idx] = 1.0
-            curr_budget += L[idx]
-    return x

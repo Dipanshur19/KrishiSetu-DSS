@@ -1,12 +1,10 @@
 {
   "metadata": {
-    "source_datasets": [
-      "ICRISAT District Level Database (DLD) - Uttar Pradesh Historical Yields",
-      "Commission for Agricultural Costs and Prices (CACP) MSP 2025-26",
-      "UP State Level Technical Committee (SLTC) Scale of Finance 2025-26",
-      "Open-Meteo Historical & 14-Day Weather Forecast Coordinates"
-    ],
-    "last_updated": "2026-11-25"
+    "purpose": "Illustrative seven-district teaching dataset. Crop prices and yield, finance, insurance, expense and climate assumptions require verification before field use.",
+    "price_unit": "INR per quintal",
+    "finance_unit": "INR per acre",
+    "yield_unit": "tonnes per acre",
+    "source_notes": "README.md#data-and-model-evidence"
   },
   "districts": {
     "Kanpur Dehat": {
@@ -65,7 +63,7 @@
     },
     "Fatehpur": {
       "lat": 25.9209,
-      "lon": 80.8130,
+      "lon": 80.813,
       "agro_climatic_zone": "Central Plain / Yamuna Belt",
       "normal_14d_rain_mm": 16.5,
       "normal_seasonal_rain_mm": 740.0,
@@ -78,56 +76,56 @@
       "season": "Rabi",
       "scale_of_finance_per_acre": 24000,
       "pmfby_farmer_premium_pct": 1.5,
-      "icrisat_base_yield_tonnes_acre": 1.85,
-      "msp_per_quintal": 2425,
+      "yield_tonnes_per_acre": 1.85,
+      "price_per_quintal": 2425,
       "cost_of_cultivation_acre": 16000
     },
     "Paddy": {
       "season": "Kharif",
       "scale_of_finance_per_acre": 26000,
       "pmfby_farmer_premium_pct": 2.0,
-      "icrisat_base_yield_tonnes_acre": 2.10,
-      "msp_per_quintal": 2300,
+      "yield_tonnes_per_acre": 2.1,
+      "price_per_quintal": 2300,
       "cost_of_cultivation_acre": 18000
     },
     "Potato": {
       "season": "Rabi",
       "scale_of_finance_per_acre": 42000,
       "pmfby_farmer_premium_pct": 5.0,
-      "icrisat_base_yield_tonnes_acre": 10.50,
-      "msp_per_quintal": 1250,
+      "yield_tonnes_per_acre": 10.5,
+      "price_per_quintal": 1250,
       "cost_of_cultivation_acre": 32000
     },
     "Mustard": {
       "season": "Rabi",
       "scale_of_finance_per_acre": 18000,
       "pmfby_farmer_premium_pct": 1.5,
-      "icrisat_base_yield_tonnes_acre": 0.78,
-      "msp_per_quintal": 5950,
+      "yield_tonnes_per_acre": 0.78,
+      "price_per_quintal": 5950,
       "cost_of_cultivation_acre": 12000
     },
     "Sugarcane": {
       "season": "Annual",
       "scale_of_finance_per_acre": 48000,
       "pmfby_farmer_premium_pct": 2.0,
-      "icrisat_base_yield_tonnes_acre": 32.5,
-      "msp_per_quintal": 370,
+      "yield_tonnes_per_acre": 32.5,
+      "price_per_quintal": 370,
       "cost_of_cultivation_acre": 35000
     },
     "Gram": {
       "season": "Rabi",
       "scale_of_finance_per_acre": 20000,
       "pmfby_farmer_premium_pct": 2.0,
-      "icrisat_base_yield_tonnes_acre": 0.68,
-      "msp_per_quintal": 5650,
+      "yield_tonnes_per_acre": 0.68,
+      "price_per_quintal": 5650,
       "cost_of_cultivation_acre": 14000
     },
     "Maize": {
       "season": "Kharif",
       "scale_of_finance_per_acre": 22000,
       "pmfby_farmer_premium_pct": 2.0,
-      "icrisat_base_yield_tonnes_acre": 1.65,
-      "msp_per_quintal": 2225,
+      "yield_tonnes_per_acre": 1.65,
+      "price_per_quintal": 2225,
       "cost_of_cultivation_acre": 15000
     }
   },

@@ -26,10 +26,10 @@ def generate_tranches_for_application(application_id: int, sanctioned_amount: fl
     """
     tranche_1_amt = round(sanctioned_amount * 0.60, 2)
     tranche_2_amt = round(sanctioned_amount * 0.30, 2)
-    tranche_3_amt = round(sanctioned_amount * 0.10, 2)
+    tranche_3_amt = round(sanctioned_amount - tranche_1_amt - tranche_2_amt, 2)
 
     voucher_code_1 = f"ERUPI-AGRI-{uuid.uuid4().hex[:8].upper()}"
-    qr_payload_1 = f"upi://mandate?pa=krishisetu@npci&pn=KrishiSetuAgriVoucher&am={tranche_1_amt}&cu=INR&purpose=AGRI_INPUT_SEEDS_FERTILIZER&code={voucher_code_1}"
+    qr_payload_1 = f"krishisetu:demo-voucher:{voucher_code_1}"
 
     tranches = [
         {

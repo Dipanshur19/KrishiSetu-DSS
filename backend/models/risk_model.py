@@ -1,6 +1,6 @@
 """
 KrishiSetu DSS - Hybrid Credit Risk & Explainability (XGBoost + SHAP)
-Trains a real XGBoost classifier (calibrated with scikit-learn) on NABARD-calibrated
+Trains a real XGBoost classifier (combined with logistic regression) on simulated
 synthetic rural agricultural lending profiles, and computes true per-applicant
 SHAP values using `shap.TreeExplainer`.
 """
@@ -10,6 +10,8 @@ import numpy as np
 import xgboost as xgb
 import shap
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import brier_score_loss, roc_auc_score
 
 FEATURE_NAMES = [
     "debt_to_asset_ratio",
@@ -25,7 +27,7 @@ FEATURE_NAMES = [
 def _train_calibrated_xgboost_model():
     """
     Trains an XGBoost binary default risk classifier on 1,500 realistic
-    NABARD-calibrated agricultural lending samples, plus a SHAP TreeExplainer.
+    simulated agricultural lending samples, plus a SHAP TreeExplainer.
     """
     rng = np.random.default_rng(624)
     n_samples = 1500
@@ -68,17 +70,22 @@ def _train_calibrated_xgboost_model():
         random_state=624,
         eval_metric="logloss"
     )
-    xgb_model.fit(X, y)
+    train_x,test_x,train_y,test_y = train_test_split(X,y,test_size=0.2,random_state=624,stratify=y)
+    xgb_model.fit(train_x, train_y)
 
     lr_model = LogisticRegression(max_iter=500, random_state=624)
-    lr_model.fit(X, y)
+    lr_model.fit(train_x, train_y)
 
     explainer = shap.TreeExplainer(xgb_model)
-    return xgb_model, lr_model, explainer
+    predicted = np.clip(0.7*xgb_model.predict_proba(test_x)[:,1]+0.3*lr_model.predict_proba(test_x)[:,1],0.015,0.42)
+    validation = {"population":"synthetic only", "training":len(train_y), "holdout":len(test_y),
+                  "holdout_defaults":int(test_y.sum()), "auc":round(float(roc_auc_score(test_y,predicted)),3),
+                  "brier":round(float(brier_score_loss(test_y,predicted)),4)}
+    return xgb_model, lr_model, explainer, validation
 
-_XGB_MODEL, _LR_MODEL, _SHAP_EXPLAINER = _train_calibrated_xgboost_model()
+_XGB_MODEL, _LR_MODEL, _SHAP_EXPLAINER, SYNTHETIC_VALIDATION = _train_calibrated_xgboost_model()
 
-def _explain_feature(fname: str, val: float, shap_logodds_delta: float, pd_delta_pct: float) -> Dict[str, Any]:
+def _explain_feature(fname: str, val: float, shap_logodds_delta: float) -> Dict[str, Any]:
     direction = "RISK_DECREASE" if shap_logodds_delta < 0 else "RISK_INCREASE"
     labels = {
         "debt_to_asset_ratio": (
@@ -120,7 +127,6 @@ def _explain_feature(fname: str, val: float, shap_logodds_delta: float, pd_delta
         "name": title,
         "direction": direction,
         "shap_logodds": round(float(shap_logodds_delta), 4),
-        "delta_pd_pct": round(float(pd_delta_pct), 1),
         "text": desc
     }
 
@@ -174,17 +180,12 @@ def calculate_hybrid_risk_and_shap(
     else:
         sv = shap_vals[0]
 
-    # Convert log-odds SHAP contributions to intuitive percentage-point impact around base PD
-    total_abs_sv = np.sum(np.abs(sv)) + 1e-6
-    scale_factor = 32.0 / max(1.5, total_abs_sv)
-
     shap_list = []
     for idx, fname in enumerate(FEATURE_NAMES):
         s_val = float(sv[idx])
-        pd_delta_pct = s_val * scale_factor
-        shap_list.append(_explain_feature(fname, float(x_vec[0, idx]), s_val, pd_delta_pct))
+        shap_list.append(_explain_feature(fname, float(x_vec[0, idx]), s_val))
 
-    shap_list.sort(key=lambda item: abs(item["delta_pd_pct"]), reverse=True)
+    shap_list.sort(key=lambda item: abs(item["shap_logodds"]), reverse=True)
     top_3_shap = shap_list[:3]
 
     # Loss Given Default (LGD)

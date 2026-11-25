@@ -63,7 +63,7 @@ def fetch_live_open_meteo_weather(district: str, allow_network: bool = True) -> 
     baseline_14d_mm = float(d_info.get("normal_14d_rain_mm", 18.0))
     fallback_anomaly = -22.0 if district == "Jhansi" else (-10.0 if district == "Fatehpur" else -4.0)
 
-    if allow_network:
+    if allow_network and os.getenv("KRISHISETU_OFFLINE_WEATHER") != "1":
         try:
             url = (
                 f"https://api.open-meteo.com/v1/forecast"
@@ -110,7 +110,7 @@ def fetch_live_open_meteo_weather(district: str, allow_network: bool = True) -> 
     # Graceful offline/seed fallback
     fallback = {
         "_ts": now,
-        "source": "icrisat-climate-baseline",
+        "source": "district-scenario-baseline",
         "district": district,
         "latitude": d_info["lat"],
         "longitude": d_info["lon"],
@@ -121,7 +121,8 @@ def fetch_live_open_meteo_weather(district: str, allow_network: bool = True) -> 
         "drought_risk": d_info["drought_baseline"],
         "daily_series": []
     }
-    _WEATHER_CACHE[district] = fallback
+    if allow_network:
+        _WEATHER_CACHE[district] = fallback
     return fallback
 
 def calculate_forecast_and_dscr(
@@ -129,7 +130,8 @@ def calculate_forecast_and_dscr(
     application: Dict[str, Any],
     sanction_amount: float,
     district: str = "Kanpur Dehat",
-    use_live_weather: bool = True
+    use_live_weather: bool = True,
+    rate_pct: float = 4.0
 ) -> Dict[str, Any]:
     """
     Computes Expected Revenue R_hat, Drought Stress Revenue R_stress, and DSCR
@@ -146,7 +148,7 @@ def calculate_forecast_and_dscr(
 
     # Yield in quintals (1 tonne = 10 quintals) adjusted by ICRISAT district factor & irrigation
     base_yield_quintals = (
-        crop_norm["icrisat_base_yield_tonnes_acre"]
+        crop_norm["yield_tonnes_per_acre"]
         * district_info.get("yield_multiplier", 1.0)
         * 10.0
         * area_acres
@@ -157,7 +159,7 @@ def calculate_forecast_and_dscr(
     weather_yield_adj = 1.0 + (weather_info["rainfall_anomaly_pct"] / 100.0) * rain_sensitivity
     adjusted_yield = base_yield_quintals * irrig_info["normal_multiplier"] * max(0.75, min(1.15, weather_yield_adj))
 
-    gross_crop_revenue = adjusted_yield * crop_norm["msp_per_quintal"]
+    gross_crop_revenue = adjusted_yield * crop_norm["price_per_quintal"]
     cultivation_cost = crop_norm["cost_of_cultivation_acre"] * area_acres
     net_crop_revenue = max(0.0, gross_crop_revenue - cultivation_cost)
 
@@ -170,7 +172,7 @@ def calculate_forecast_and_dscr(
 
     # Drought stress scenario (-35% seasonal deficit)
     drought_yield = base_yield_quintals * irrig_info["drought_retention"]
-    drought_gross_revenue = drought_yield * crop_norm["msp_per_quintal"]
+    drought_gross_revenue = drought_yield * crop_norm["price_per_quintal"]
     pmfby_optin = application.get("pmfby_optin", True)
     pmfby_payout = (cultivation_cost * 0.70) if pmfby_optin else 0.0
 
@@ -178,7 +180,7 @@ def calculate_forecast_and_dscr(
     R_stress = drought_net_crop_revenue + (allied_annual_income * 0.85) + non_farm_income
 
     principal = float(sanction_amount)
-    effective_interest = principal * 0.04
+    effective_interest = principal * rate_pct / 100
     standard_interest = principal * 0.07
     total_debt_service_miss = principal + effective_interest
     total_debt_service_std = principal + standard_interest
@@ -195,7 +197,7 @@ def calculate_forecast_and_dscr(
         verdict_desc = f"DSCR of {dscr_miss:.2f} indicates robust cash flow buffer even after living expenses."
     elif dscr_miss >= 1.15:
         verdict = "ADEQUATE_COVERAGE"
-        verdict_desc = f"DSCR of {dscr_miss:.2f} satisfies RBI benchmark (>= 1.15) under 4% MISS incentive."
+        verdict_desc = f"DSCR of {dscr_miss:.2f} meets the classroom coverage threshold at {rate_pct:g}% interest."
     elif dscr_miss >= 0.90:
         verdict = "BORDERLINE_STRESS"
         verdict_desc = f"DSCR of {dscr_miss:.2f} indicates thin repayment buffer; recommendation: PMFBY + allied dairy support."

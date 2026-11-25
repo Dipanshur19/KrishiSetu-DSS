@@ -3,8 +3,9 @@ uvicorn>=0.34.0
 scipy>=1.14.0
 numpy>=1.26.0
 scikit-learn>=1.5.0
-xgboost>=2.1.0
-shap>=0.46.0
+xgboost-cpu==3.1.2; sys_platform == "linux" and platform_machine == "x86_64"
+xgboost==3.1.2; sys_platform != "linux" or platform_machine != "x86_64"
+shap==0.50.0
 pydantic>=2.10.0
 httpx>=0.28.0
 psycopg2-binary>=2.9.9

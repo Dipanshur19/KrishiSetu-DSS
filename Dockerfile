@@ -1,8 +1,8 @@
 # Multi-stage Dockerfile for KrishiSetu DSS
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build:static
 
@@ -10,7 +10,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    build-essential libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -45,3 +45,10 @@ input[type="range"] {
   max-width: none !important;
   max-height: none !important;
 }
+.control, .primary { border-radius: .7rem; padding: .55rem .9rem; font-size: .875rem; cursor: pointer; }
+.control { border: 1px solid #cfd4c3; background: white; }
+.control:disabled { background: #e4ecd6; color: #435633; }
+.primary { background: #314e22; color: white; }
+.primary:disabled { opacity: .55; cursor: wait; }
+.field { display: block; width: 100%; min-width: 0; border: 1px solid #cfd4c3; border-radius: .65rem; padding: .65rem; margin-top: .3rem; background: white; }
+:focus-visible { outline: 2px solid #547d28; outline-offset: 2px; }

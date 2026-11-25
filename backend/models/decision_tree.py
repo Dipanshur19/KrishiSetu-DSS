@@ -98,7 +98,7 @@ def evaluate_decision_tree(
                 has_informal_debt_only = True
             else:
                 has_commercial_npa = True
-        total_overdue += float(liab.get("outstanding_balance_m", 0.0))
+        total_overdue += float(liab.get("outstanding_balance_m", 0.0)) if liab.get("overdue_days",0)>0 else 0.0
 
     if has_wilful_default:
         steps_log.append({
@@ -135,7 +135,7 @@ def evaluate_decision_tree(
         reasons.append("Subject to NPA restructuring terms with lending branch.")
     else:
         compliance_result = "PASS"
-        compliance_details = "Clean compliance profile. No active wilful default or duplicate Survey/Khasra KCC detected."
+        compliance_details = "No lender default was supplied to the rule engine. The application service checks the local plot records."
 
     steps_log.append({
         "step": 2,
@@ -158,7 +158,7 @@ def evaluate_decision_tree(
         instrument = "Flexi KCC"
         collateral_required = False
         instrument_details = "Sharecropper / Oral lessee without land title: Eligible for Flexi KCC (₹10,000–₹50,000) backed by Panchayat affidavit."
-        reasons.append("Approved for Flexi KCC without land mortgage under RBI 2026 Direction for sharecroppers.")
+        reasons.append("Flexi KCC suggested for bank assessment under the classroom policy.")
     elif requested_amount <= collateral_free_threshold:
         instrument = "Collateral-Free KCC"
         collateral_required = False
@@ -167,8 +167,8 @@ def evaluate_decision_tree(
     elif requested_amount <= collateral_free_tieup_threshold and has_tieup:
         instrument = "Collateral-Free KCC (Tie-Up)"
         collateral_required = False
-        instrument_details = f"Requested ₹{requested_amount:,.0f} <= ₹{collateral_free_tieup_threshold:,.0f} with verified {marketing_tieup} tie-up: Extended Collateral Waiver applies."
-        reasons.append(f"Extended collateral waiver applied up to ₹3 Lakh due to verified {marketing_tieup} recovery tie-up.")
+        instrument_details = f"Requested ₹{requested_amount:,.0f} <= ₹{collateral_free_tieup_threshold:,.0f} with declared {marketing_tieup} tie-up: Extended Collateral Waiver applies."
+        reasons.append(f"Extended collateral waiver applied up to ₹3 Lakh due to declared {marketing_tieup} recovery tie-up.")
     else:
         instrument = "Collateral / Hypothecation Required KCC"
         collateral_required = True

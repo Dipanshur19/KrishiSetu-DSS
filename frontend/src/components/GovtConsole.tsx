@@ -151,7 +151,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
         <div className="flex flex-wrap items-center gap-1.5">
           {[
             { key: "macro", label: "District Map" },
-            { key: "compliance", label: "Bank PSL Audit" },
+            { key: "compliance", label: "Bank allocation audit" },
             { key: "policy", label: "Policy Levers" },
             { key: "tribunal", label: `Tribunal (${tribunalCases.length})` },
           ].map((tab) => (
@@ -190,7 +190,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                 {macroKpi?.smf_share_pct || 0}%
               </div>
               <span className="text-xs text-[#5e5c55] mt-1 block">
-                vs {macroKpi?.rbi_smf_mandate_benchmark_pct || 55.6}% RBI benchmark
+                vs {macroKpi?.rbi_smf_mandate_benchmark_pct ?? 55.6}% batch target
               </span>
             </div>
 
@@ -275,7 +275,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                         {d.forecast_14d_precip_mm} mm
                       </td>
                       <td className="px-4 py-3 text-right text-[#5e5c55]">
-                        {d.fldg_coverage_active ? "FLDG Active" : "Standard"}
+                        {d.fldg_coverage_active ? "Guarantee enabled" : "Guarantee off"}
                       </td>
                     </tr>
                   ))}
@@ -290,7 +290,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
       {activeTab === "compliance" && (
         <div className="space-y-5">
           <div className="bento-card p-6 space-y-4 min-w-0">
-            <h3 className="text-[15px] font-medium text-[#141513]">SMF Share by Bank vs 55.6% Benchmark</h3>
+            <h3 className="text-[15px] font-medium text-[#141513]">SMF Share by Bank · published target {macroKpi?.rbi_smf_mandate_benchmark_pct}%</h3>
             <div className="h-56 w-full min-w-0">
               <ResponsiveContainer width="100%" height={224} minWidth={0}>
                 <BarChart data={bankChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -298,10 +298,10 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#5e5c55" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "#8a877d" }} domain={[0, 100]} unit="%" axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ fontSize: "12px", borderRadius: "12px" }} />
-                  <ReferenceLine y={55.6} stroke="#dc2626" strokeDasharray="4 4" />
+                  <ReferenceLine y={macroKpi?.rbi_smf_mandate_benchmark_pct} stroke="#dc2626" strokeDasharray="4 4" />
                   <Bar dataKey="smfShare" radius={[6, 6, 0, 0]}>
                     {bankChartData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.smfShare >= 55.6 ? "#84cc16" : "#d97706"} />
+                      <Cell key={idx} fill={entry.smfShare >= (macroKpi?.rbi_smf_mandate_benchmark_pct ?? 55.6) ? "#84cc16" : "#d97706"} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -473,6 +473,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                     </span>
                   </div>
                   <p className="text-xs text-[#5e5c55]">{c.grievance_text}</p>
+                  {c.supporting_doc && /^[a-f0-9]{32}$/.test(c.supporting_doc) && <button className="control" onClick={()=>api.downloadEvidence(c.supporting_doc!).catch(e=>setPolicyError(e.message))}>Download evidence</button>}
                   {c.govt_directive ? (
                     <div className="text-xs text-[#365314] bg-[#eef7d6] p-2.5 rounded-lg">
                       Directive: {c.govt_directive}
@@ -503,7 +504,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                       onClick={() => {
                         setActiveDirectiveCase(c.id);
                         setDirectiveText(
-                          "DIRECTIVE: Waive collateral under RBI Jan 2025 norm and disburse Tranche 1 within 24 hours."
+                          "Please re-evaluate the application and record your findings."
                         );
                       }}
                       className="px-3.5 py-1.5 bg-[#141513] text-white rounded-full text-xs font-medium"

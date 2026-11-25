@@ -16,17 +16,12 @@ if __name__ == "__main__":
     from database import init_db, get_db_connection, DATABASE_URL
     import seed_data
 
-    db_file = os.path.join(BACKEND_DIR, "krishisetu.db")
-    if DATABASE_URL:
-        init_db()
-        conn = get_db_connection()
-        cnt = conn.execute("SELECT COUNT(*) FROM users_and_roles").fetchone()[0]
-        conn.close()
-        if cnt == 0:
-            print("Supabase PostgreSQL empty. Seeding initial 160 records...")
-            seed_data.seed_database()
-    elif not os.path.exists(db_file):
-        print("Database not found. Initializing and seeding...")
+    init_db()
+    conn = get_db_connection()
+    empty = conn.execute("SELECT COUNT(*) FROM users_and_roles").fetchone()[0] == 0
+    conn.close()
+    from access import DEMO_ENABLED
+    if empty and DEMO_ENABLED:
         seed_data.seed_database()
 
     port = int(os.environ.get("PORT", 8000))

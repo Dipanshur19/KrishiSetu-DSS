@@ -22,6 +22,8 @@ export interface AuthSession {
     district: string;
     branch_or_dept?: string;
     application_id?: number;
+    farmer_id?: number;
+    bank?: string;
   };
 }
 
@@ -98,6 +100,9 @@ export interface WeatherProfile {
 }
 
 export interface FarmerApplicationOutcome {
+  recommended_amount: number;
+  review_reason?: string;
+  decision_note?: string;
   id: number;
   application_no: string;
   farmer_id: number;
@@ -174,6 +179,9 @@ export interface OptimizerMetricsBucket {
 }
 
 export interface OptimizerResult {
+  run_id: number | null;
+  policy_version: number;
+  simulation_only: boolean;
   status: string;
   dss_allocated_ids: number[];
   pure_profit_ids: number[];
@@ -192,6 +200,7 @@ export interface OptimizerResult {
 }
 
 export interface DistrictHeatmapRow {
+  smf_target_pct: number;
   district: string;
   lat: number;
   lon: number;

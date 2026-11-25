@@ -1,68 +1,53 @@
-# KrishiSetu DSS: Computer Aided Decision System
-**Course Project: DMS624 / IME624 (Computer Aided Decision Systems)**  
-*Department of Industrial & Management Engineering, IIT Kanpur*
+# KrishiSetu DSS
 
-- **Live Deployed Application (Render):** [https://krishisetu-dss.onrender.com](https://krishisetu-dss.onrender.com)
-- **GitHub Repository:** [https://github.com/Dipanshur19/KrishiSetu-DSS](https://github.com/Dipanshur19/KrishiSetu-DSS)
+DMS624 · Computer Aided Decision Systems · IIT Kanpur
 
----
+KrishiSetu demonstrates how a bank can allocate a limited agricultural credit budget while a government agency sets inclusion targets and caps expected losses. A farmer receives an estimate, can track a bank decision, and can appeal. The public demo uses synthetic applicants, illustrative crop parameters and simulated payments.
 
-## 1. Executive Overview & Core Decision Conflict
+## Run locally
 
-**KrishiSetu DSS** is a three-sided Computer Aided Decision System resolving the structural conflict between **Government welfare mandates** and **Bank risk aversion** across India's **₹32.50 Lakh Crore** agricultural credit target (FY 2025–26).
+Use Python 3.11 or 3.12 and Node.js 22. From the repository root:
 
-- **Government (Welfare Mandate):** Prioritize Marginal Farmers ($\le 1\text{ ha}$, over 86% of Indian farmers), enforce RBI Priority Sector Lending (10% SMF sub-target / 55.6% of agri PSL), and prevent end-use leakage without arbitrary cash handouts.
-- **Commercial Banks (Risk Aversion):** Keep portfolio NPAs strictly below regulatory ceilings while growing profitable lending.
-- **Farmers (Credit Access):** Overcome fragmented bank paperwork, collateral barriers ($\le ₹2.00\text{ Lakh}$ RBI waiver + Flexi KCC for sharecroppers), and opaque rejections.
-
----
-
-## 2. Full Production Tech Stack (Per `dms624.pdf`)
-
-| Layer | Technology | Deployment |
-|---|---|---|
-| **Frontend (All 3 UIs)** | **Next.js 16 (React 19 + TypeScript) + Tailwind CSS + Recharts + Leaflet** + Hindi/English i18n + Web Speech API | Vercel (`frontend/vercel.json`) or single-host static export |
-| **DSS Backend & Models** | **FastAPI + trained `XGBoost` + `scikit-learn` + `shap.TreeExplainer` + `scipy.optimize.milp`** | Render (`render.yaml`) |
-| **Database & Auth** | **Supabase (PostgreSQL + RLS RBAC + Auth + Storage)** with automatic local SQLite + `/uploads` fallback | Supabase Cloud (`supabase/schema.sql`) |
-| **Live External APIs** | **Open-Meteo API** (live 14-day precipitation & max temp REST call via `httpx`) + **ICRISAT / CACP MSP / UP SLTC Scale-of-Finance JSON** | Direct REST call from FastAPI |
-
----
-
-## 3. Canonical DSS Subsystems
-
-### A. Data Management Subsystem (`backend/database.py`, `supabase/schema.sql`)
-Harmonizes Axis Bank (agronomic resilience), SBI (PM-KISAN & allied dairy), and Bank of India (social category & Net Worth $[(K+L)-M]$) into **8 normalized tables**, pre-seeded with **160 realistic synthetic applications** across 7 UP districts (*Kanpur Dehat, Kanpur Nagar, Unnao, Jhansi, Lucknow, Barabanki, Fatehpur*).
-
-### B. Model Management Subsystem (`backend/models/`)
-1. **Explainable Decision Tree (`decision_tree.py`, `/evaluate/decision-tree`):** 4-step RBI eligibility engine (land classification, informal moneylender debt-swap routing, Flexi KCC / collateral waiver routing, Scale-of-Finance credit limit).
-2. **Cash-Flow & Agronomic Forecast (`forecast_model.py`, `/evaluate/forecast`):** Live Open-Meteo 14-day weather anomaly + ICRISAT district yields + CACP MSP prices $\to$ Expected Revenue $\hat{R}_i$, $-35\%$ Drought Stress $R_{\text{stress}, i}$, and DSCR at 4% MISS prompt repayment rate.
-3. **Hybrid Credit Risk + SHAP (`risk_model.py`, `/evaluate/risk-score`):** Trained XGBoost + Logistic Regression ensemble with exact `shap.TreeExplainer` attributions.
-4. **Constrained Portfolio Optimizer (`portfolio_optimizer.py`, `/optimize/allocate`):** Mixed-Integer Linear Program solved via `scipy.optimize.milp` with Government First-Loss Default Guarantee ($\gamma$) resolving the Bank vs. Government conflict.
-5. **Intended-Usage Voucher System (`voucher_system.py`):** 3 tranches (60% e-RUPI seed/fertilizer QR voucher, 30% farm operations UPI credit, 10% geo-tagged sowing proof rebate unlock).
-
-### C. Dialog Subsystem (`frontend/src/components/`)
-- **Farmer Portal:** Bilingual English/Hindi 4-step wizard, Web Speech voice input, live Scale-of-Finance estimator, transparent SHAP explanation cards, e-RUPI QR wallet + POS scanner, geo-tagged sowing upload, and 7-day SLA grievance desk.
-- **Bank Officer Workbench:** Unified dossier, Recharts revenue & SHAP waterfall visualizations, batch MILP optimizer with What-If sliders, and grievance queue.
-- **Government Policy Console:** Interactive **Leaflet** district geospatial map with live Open-Meteo overlays, Recharts bank PSL compliance benchmark chart, live policy correction sliders, and escalated grievance tribunal.
-
----
-
-## 4. Week-4 Demo Accounts (RBAC Login)
-
-Use the **Demo Login** button in the top navigation bar:
-- **Farmer:** `farmer@demo`
-- **Bank Officer:** `bank@demo`
-- **Government Auditor:** `govt@demo`
-
----
-
-## 5. Local Quick Start & Verification
-
-```powershell
-# Start unified FastAPI + Next.js static server at http://localhost:8000
+```sh
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+npm ci --prefix frontend
+npm run build:static --prefix frontend
 python run_server.py
-
-# Run full verification suites
-python test_app.py
-python e2e_verify_live.py
 ```
+
+Open http://127.0.0.1:8000. The launcher serves the built frontend and FastAPI from one origin. For frontend development run the API and `npm run dev --prefix frontend` in separate terminals. The initial install and static build require network access. Docker builds both layers from source. Render uses the Dockerfile in this branch. A local SQLite database on an ephemeral host can reset on redeploy.
+
+## Five-minute walkthrough
+
+1. Choose **Farmer**. Apply using fictional details. For a high-stress case choose one acre of rainfed wheat, no livestock, no insurance and a ₹50,000 request. The baseline scenario recommends ₹31,200 and a bank review. The wallet stays empty. A second case with two acres, drip irrigation, four dairy animals, a different plot and a ₹9,000 request illustrates the allocation path.
+2. Choose the lending bank from **Demo bank**, then **Bank officer**. The dossier shows requested credit, recommended credit and the repayment outlook. A documented review can release an application into the eligible pool or reject it. Review does not issue money.
+3. Open **Portfolio Optimizer** and use the published policy. Compare the equitable portfolio with the bank-return baseline. Changing a policy slider creates a what-if result. Use **Use latest policy** to restore the published parameters. A saved allocation can be committed once and only by its bank; if policy or an application changes, rerun the optimizer. The budget is per allocation run.
+4. Return to **Farmer → Decision**. A partially approved loan shows the requested, recommended and sanctioned amounts separately. The wallet simulates a 60% input voucher, a 30% operations credit and a 10% reserve. The QR encodes a demo identifier. Recording a photo and device coordinates releases the simulated reserve. This records evidence, without authenticating the crop or triggering an actual payment or interest rebate.
+5. Open **Government auditor → Policy Levers** and publish a change. The next bank allocation uses the new version. The government dashboard compares district and bank outcomes against the published batch target. A farmer can attach evidence to an appeal. After seven days an open appeal enters the tribunal; a directive returns an undecided or rejected application to review. A background sweep runs once per minute while the service is awake. Queue reads also catch up after downtime.
+
+## Data and model evidence
+
+| Input or result | Implementation and provenance |
+|---|---|
+| Borrower inputs | The included SBI PM-KISAN form separates outstanding debt from overdues and records tenure and Khasra number. The Axis form supplies irrigation, market access and marketing arrangements. BOI AG-100 section N gives net worth as movable plus immovable assets minus liabilities. Intake snapshots preserve what the applicant declared for each new application. |
+| Crop prices, yields, finance limits and allied income | See `backend/data/icrisat_msp_sof.json` and `backend/models/forecast_model.py`. Rupee prices are per quintal, yields in tonnes per acre and scale of finance in rupees per acre. Values are scenario inputs. The original dataset provided no district notification or source-table identifiers. Local government and bank notices should be sourced before substituting field values. The official price series is available from the [Economics, Statistics & Evaluation Division](https://desagri.gov.in/notifications/). |
+| Weather and coverage | Open-Meteo provides the 14-day forecast when available. The response identifies its source. A cached district baseline supports offline demos. Set `KRISHISETU_OFFLINE_WEATHER=1` to reproduce the baseline. DSCR divides modeled cash available after expenses by principal plus modeled interest. The drought scenario, household income and insurance payout are assumptions. |
+| Credit risk | A deterministic generator creates 1,500 labeled synthetic profiles. The XGBoost and logistic models fit 1,200 profiles. The other 300 supply ROC AUC and Brier score in **Data and model evidence**. The blended and clipped model probability is evaluated on the holdout. Tree SHAP contributions are in log-odds. These scores have no field repayment validation. Historical dossiers retain their original stored evaluations. |
+| Portfolio | SciPy MILP selects eligible pending applications from the officer’s bank. It checks budget, SMF share, weaker-section share, expected-loss cap and guarantee budget. Infeasible funding of any applicant yields ₹0. Failed solvers cannot commit. Portfolio net expected loss uses exposure-weighted PD × LGD after guarantee. The 55.6% default SMF batch target is a scenario inspired by bank-level lending targets. The regulatory denominator differs from a batch of agricultural loans. See the [RBI directions](https://www.rbi.org.in/scripts/BS_ViewMasDirections.aspx?id=12799). |
+
+## Accounts, persistence and verification
+
+SQLite is the default. `KRISHISETU_DB_PATH` selects a separate local database. For a persistent PostgreSQL deployment, initialize `supabase/schema.sql`, configure `DATABASE_URL` with a server-only database owner connection, and start the launcher. It adds the workflow tables without resetting existing applications.
+
+Demo logins deliberately allow visitors to select fictional roles. Use an isolated synthetic database for a public demo. For a private instance use `KRISHISETU_DEMO=0`, Supabase URL and key, and provision roles by linking `users_and_roles.auth_uid` to a Supabase user. Link farmer profiles through `user_id`; for officers set `branch_or_dept` to the exact assigned bank name. The server issues four-hour sessions and checks both role and record ownership. Evidence is served through authenticated API requests. Older public storage objects, if any, must be reviewed separately when migrating a previous deployment.
+
+```sh
+python test_app.py              # isolated SQLite regression suite; leave DATABASE_URL unset
+python e2e_verify_live.py       # smoke check against a running local demo
+npm run lint --prefix frontend  # TypeScript
+```
+
+The regression suite exercises stressed and eligible applications, repeat submissions, net worth, loan history, policy changes, stale and repeated allocation commits, vouchers, private evidence and overdue appeals. The files uploaded for the course contain planning notes and bank forms. Confirm submission deliverables against the instructor’s original rubric.

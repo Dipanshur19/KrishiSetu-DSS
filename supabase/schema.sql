@@ -163,38 +163,13 @@ CREATE TABLE IF NOT EXISTS govt_policy_parameters (
 );
 
 -- ============================================================================
--- Supabase Storage Buckets for Grievance Docs & Geo-Tagged Sowing Photos
--- ============================================================================
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('krishisetu-docs', 'krishisetu-docs', true)
-ON CONFLICT (id) DO NOTHING;
-
--- ============================================================================
--- Row Level Security (RLS) & RBAC Policies
--- ============================================================================
+-- New evidence is stored behind the API in evidence_files. The launcher creates
+-- workflow tables on startup. Direct browser access to lending records is disabled.
+DROP POLICY IF EXISTS "Bank & Govt Read All Applications" ON loan_applications;
+DROP POLICY IF EXISTS "Farmers Read Own Applications" ON loan_applications;
 ALTER TABLE farmer_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE loan_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE grievances_and_policy_logs ENABLE ROW LEVEL SECURITY;
-
--- Allow authenticated service role or demo policies
-DROP POLICY IF EXISTS "Bank & Govt Read All Applications" ON loan_applications;
-CREATE POLICY "Bank & Govt Read All Applications" ON loan_applications
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM users_and_roles u
-            WHERE u.auth_uid = auth.uid() AND u.role IN ('bank_officer', 'govt_auditor', 'admin')
-        )
-    );
-
-DROP POLICY IF EXISTS "Farmers Read Own Applications" ON loan_applications;
-CREATE POLICY "Farmers Read Own Applications" ON loan_applications
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM farmer_profiles fp
-            JOIN users_and_roles u ON fp.user_id = u.id
-            WHERE fp.id = loan_applications.farmer_id AND u.auth_uid = auth.uid()
-        )
-    );
 
 -- Seed default RBI / Ministry policy row if empty
 INSERT INTO govt_policy_parameters (

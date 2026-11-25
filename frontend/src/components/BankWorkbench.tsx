@@ -26,6 +26,7 @@ import {
   Grievance,
   Language,
   OptimizerResult,
+  PolicyConfig,
 } from "@/types/dss";
 
 interface BankWorkbenchProps {
@@ -51,6 +52,8 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   const [optimizing, setOptimizing] = useState(false);
   const [optResult, setOptResult] = useState<OptimizerResult | null>(null);
   const [disbursing, setDisbursing] = useState(false);
+  const [policy,setPolicy] = useState<PolicyConfig|null>(null);
+  const [reviewNote,setReviewNote] = useState("");
   const [approvingSingle, setApprovingSingle] = useState(false);
   const [disburseSuccess, setDisburseSuccess] = useState("");
   const [actionError, setActionError] = useState("");
@@ -102,6 +105,18 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
     return () => clearTimeout(timer);
   }, [fetchApplications]);
 
+  const restorePolicy = (p:PolicyConfig) => {
+    setSmfQuotaSlider(Number((p.smf_minimum_quota*100).toFixed(2)));
+    setNpaSlider(Number((p.bank_max_npa_ceiling*100).toFixed(2)));
+    setFldgSlider(Number((p.govt_first_loss_guarantee*100).toFixed(2)));
+    setOptResult(null);
+  };
+  useEffect(()=>{
+    api.getPolicyConfig().then(p=>{setPolicy(p);restorePolicy(p);}).catch(e=>setActionError(e.message));
+  },[]);
+  useEffect(()=>{setOptResult(null);},[budgetSlider,npaSlider,fldgSlider,smfQuotaSlider,districtFilter]);
+  useEffect(()=>{setReviewNote("");},[selectedAppDetail?.id]);
+
   const handleRunOptimizer = async () => {
     setOptimizing(true);
     setDisburseSuccess("");
@@ -123,11 +138,12 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   };
 
   const handleDisburseBatch = async () => {
-    if (!optResult?.dss_allocated_ids?.length) return;
+    if (!optResult?.run_id || !optResult.dss_allocated_ids.length) return;
     setDisbursing(true);
     setActionError("");
     try {
-      const data = await api.disburseBatch(optResult.dss_allocated_ids);
+      const data = await api.disburseBatch(optResult.dss_allocated_ids,optResult.run_id);
+      setOptResult(null);
       setDisburseSuccess(data.message);
       fetchApplications();
     } catch (err: unknown) {
@@ -137,11 +153,12 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
     }
   };
 
-  const handleApproveSingle = async (appId: number) => {
+  const handleReview = async (appId: number,action:string) => {
     setApprovingSingle(true);
     setActionError("");
     try {
-      await api.disburseBatch([appId]);
+      await api.review(appId,action,reviewNote.trim());
+      setReviewNote("");setOptResult(null);
       fetchApplications();
       loadApplicationDetail(appId);
     } catch (err: unknown) {
@@ -179,14 +196,14 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
   const shapChartData = (selectedAppDetail?.shap_reasons || []).map((item) => ({
     name: item.name,
-    delta: item.delta_pd_pct,
+    delta: item.shap_logodds ?? 0,
   }));
 
   const optimizerChartData = optResult
     ? [
         { metric: "SMF %", DSS: optResult.metrics.equitable_dss.smf_share_pct, PureProfit: optResult.metrics.pure_profit.smf_share_pct },
         { metric: "Weaker %", DSS: optResult.metrics.equitable_dss.weaker_share_pct, PureProfit: optResult.metrics.pure_profit.weaker_share_pct },
-        { metric: "NPA (x10)", DSS: Number((optResult.metrics.equitable_dss.portfolio_npa_pct * 10).toFixed(1)), PureProfit: Number((optResult.metrics.pure_profit.portfolio_npa_pct * 10).toFixed(1)) },
+        { metric: "Loss % (×10)", DSS: Number((optResult.metrics.equitable_dss.portfolio_npa_pct * 10).toFixed(1)), PureProfit: Number((optResult.metrics.pure_profit.portfolio_npa_pct * 10).toFixed(1)) },
       ]
     : [];
 
@@ -319,7 +336,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                             <td className="px-4 py-3 text-right">
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[11px] capitalize ${
-                                  app.status === "approved"
+                                  ["approved","partial_approved"].includes(app.status)
                                     ? "bg-[#eef7d6] text-[#365314]"
                                     : "bg-[#f5f5ee] text-[#5e5c55]"
                                 }`}
@@ -343,6 +360,17 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
               )}
               {selectedAppDetail && (
                 <>
+                  <section className="bento-card p-5 space-y-3">
+                    <p className="font-medium">{selectedAppDetail.status.replaceAll("_"," ")} · Recommended ₹{selectedAppDetail.recommended_amount.toLocaleString("en-IN")}</p>
+                    {selectedAppDetail.review_reason && <p>{selectedAppDetail.review_reason}</p>}
+                    {selectedAppDetail.decision_note && <p>Officer’s note · {selectedAppDetail.decision_note}</p>}
+                    {["submitted","appealed","under_review"].includes(selectedAppDetail.status) &&
+                    <><label className="text-sm">Officer’s reason<textarea className="field" value={reviewNote} onChange={e=>setReviewNote(e.target.value)}/></label>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="control" disabled={approvingSingle || reviewNote.trim().length<5} onClick={()=>handleReview(selectedAppDetail.id,"release")}>Release for allocation</button>
+                      <button className="control" disabled={approvingSingle || reviewNote.trim().length<5} onClick={()=>handleReview(selectedAppDetail.id,"reject")}>Reject with reason</button>
+                    </div></>}
+                  </section>
                   {/* Card 1: Cash-Flow AreaChart */}
                   <div className="bento-card p-5 space-y-4 min-w-0">
                     <div className="flex items-start justify-between">
@@ -356,17 +384,6 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {selectedAppDetail.status !== "approved" && (
-                          <button
-                            disabled={approvingSingle}
-                            onClick={() => handleApproveSingle(selectedAppDetail.id)}
-                            className="px-3.5 py-1.5 rounded-full bg-[#141513] text-[#d4f04c] text-xs font-medium hover:bg-black/85 disabled:opacity-60"
-                          >
-                            {approvingSingle
-                              ? "Approving..."
-                              : `Approve ₹${Number(selectedAppDetail.sanctioned_amount).toLocaleString("en-IN")}`}
-                          </button>
-                        )}
                         <button
                           onClick={() => setIsDecisionTreeOpen(true)}
                           className="w-8 h-8 rounded-full border border-black/[0.08] flex items-center justify-center text-[#5e5c55] hover:text-[#141513]"
@@ -414,7 +431,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <ClimateGaugeCard
                       title="DSCR & Climate"
-                      subtitle={selectedAppDetail.irrigation_source}
+                      subtitle={selectedAppDetail.irrigation_source + " · " + (selectedAppDetail.weather_profile?.source==="open-meteo-live"?"Live weather":"District baseline")}
                       primaryValue={`${selectedAppDetail.dscr_ratio}x`}
                       progressRatio={Math.min(1, selectedAppDetail.dscr_ratio / 2.5)}
                       metric1Label="Sanction"
@@ -427,7 +444,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
                     <div className="bento-card p-5 space-y-2 min-w-0">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-[15px] font-medium text-[#141513]">SHAP Risk Drivers</h3>
+                        <h3 className="text-[15px] font-medium text-[#141513]">Tree SHAP · log-odds</h3>
                         <span className="text-xs font-mono text-[#5e5c55]">
                           {(selectedAppDetail.pd_score * 100).toFixed(1)}% PD
                         </span>
@@ -435,11 +452,11 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       <div className="h-44 w-full min-w-0">
                         <ResponsiveContainer width="100%" height={176} minWidth={0}>
                           <BarChart data={shapChartData} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                            <XAxis type="number" tick={{ fontSize: 10, fill: "#8a877d" }} unit="%" axisLine={false} tickLine={false} />
+                            <XAxis type="number" tick={{ fontSize: 10, fill: "#8a877d" }} axisLine={false} tickLine={false} />
                             <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#5e5c55" }} width={118} axisLine={false} tickLine={false} />
                             <ReferenceLine x={0} stroke="rgba(20,21,19,0.2)" />
                             <Tooltip
-                              formatter={(val) => [`${Number(val) > 0 ? "+" : ""}${val}%`, "SHAP"]}
+                              formatter={(val) => [`${Number(val) > 0 ? "+" : ""}${val}`, "Tree log-odds"]}
                               contentStyle={{ fontSize: "11px", borderRadius: "10px" }}
                             />
                             <Bar dataKey="delta" radius={[4, 4, 4, 4]}>
@@ -460,6 +477,12 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
       )}
 
       {/* TAB 2: PORTFOLIO OPTIMIZER */}
+      {activeTab === "optimizer" && <div className="flex flex-wrap gap-3 items-center">
+        <span>Published policy v{policy?.id ?? "…"} · Modified sliders run a simulation.</span>
+        <button className="control" onClick={()=>api.getPolicyConfig().then(p=>{setPolicy(p);restorePolicy(p);}).catch(e=>setActionError(e.message))}>Use latest policy</button>
+        {optResult && <span role="status">Policy v{optResult.policy_version} · {optResult.simulation_only?"What-if only":optResult.status.replaceAll("_"," ")}</span>}
+        {actionError && <p role="alert">{actionError}</p>}{disburseSuccess && <p role="status">{disburseSuccess}</p>}
+      </div>}
       {activeTab === "optimizer" && (
         <div className="space-y-5">
           <div className="bento-card p-6 space-y-5">
@@ -467,7 +490,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
               <h3 className="text-[15px] font-medium text-[#141513]">Allocation Parameters (MILP)</h3>
               <button
                 onClick={handleRunOptimizer}
-                disabled={optimizing}
+                disabled={optimizing || !policy}
                 className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium"
               >
                 <Play className="w-3.5 h-3.5 text-[#d4f04c] fill-current" />
@@ -494,7 +517,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#5e5c55]">Max NPA Cap</span>
+                  <span className="text-[#5e5c55]">Expected loss cap</span>
                   <span className="font-mono font-medium text-[#141513]">{npaSlider}%</span>
                 </div>
                 <input
@@ -526,7 +549,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#5e5c55]">RBI SMF Quota</span>
+                  <span className="text-[#5e5c55]">Batch SMF target</span>
                   <span className="font-mono font-medium text-[#141513]">{smfQuotaSlider}%</span>
                 </div>
                 <input
@@ -576,7 +599,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       </div>
                     </div>
                     <div className="bento-surface-soft p-3">
-                      <span className="text-[#8a877d]">Net NPA</span>
+                      <span className="text-[#8a877d]">Net expected loss</span>
                       <div className="text-xl font-medium text-[#141513] font-mono mt-0.5">
                         {optResult.metrics.equitable_dss.portfolio_npa_pct}%
                       </div>
@@ -611,7 +634,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       </div>
                     </div>
                     <div className="bento-surface-soft p-3">
-                      <span className="text-[#8a877d]">Portfolio NPA</span>
+                      <span className="text-[#8a877d]">Portfolio expected loss</span>
                       <div className="text-xl font-medium text-[#5e5c55] font-mono mt-0.5">
                         {optResult.metrics.pure_profit.portfolio_npa_pct}%
                       </div>
@@ -638,7 +661,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                 </div>
                 <button
                   onClick={handleDisburseBatch}
-                  disabled={disbursing}
+                  disabled={disbursing || !optResult.run_id}
                   className="px-5 py-2.5 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85"
                 >
                   {disbursing ? "Disbursing..." : "Approve & Disburse Batch"}
@@ -681,6 +704,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   </span>
                 </div>
                 <p className="text-xs text-[#5e5c55]">{g.grievance_text}</p>
+                {g.supporting_doc && /^[a-f0-9]{32}$/.test(g.supporting_doc) && <button className="control" onClick={()=>api.downloadEvidence(g.supporting_doc!).catch(e=>setActionError(e.message))}>Download evidence</button>}
                 {g.bank_response ? (
                   <div className="text-xs text-[#365314] bg-[#eef7d6] p-2.5 rounded-lg">
                     Response: {g.bank_response}
