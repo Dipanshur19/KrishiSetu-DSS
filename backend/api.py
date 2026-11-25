@@ -646,7 +646,7 @@ def list_bank_applications(
         query += " AND a.status = ?"
         params.append(status)
     if search:
-        query += " AND (p.full_name LIKE ? OR a.application_no LIKE ? OR p.farmer_uid LIKE ?)"
+        query += " AND (LOWER(p.full_name) LIKE LOWER(?) OR LOWER(a.application_no) LIKE LOWER(?) OR LOWER(p.farmer_uid) LIKE LOWER(?))"
         s = f"%{search}%"
         params.extend([s, s, s])
 

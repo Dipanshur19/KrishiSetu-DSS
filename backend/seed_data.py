@@ -45,14 +45,23 @@ def seed_database():
     cursor = conn.cursor()
 
     # Clear existing data
-    cursor.execute("DELETE FROM grievances_and_policy_logs;")
-    cursor.execute("DELETE FROM fund_tranches_and_usage;")
-    cursor.execute("DELETE FROM dss_evaluations;")
-    cursor.execute("DELETE FROM loan_applications;")
-    cursor.execute("DELETE FROM existing_liabilities;")
-    cursor.execute("DELETE FROM land_and_allied_assets;")
-    cursor.execute("DELETE FROM farmer_profiles;")
-    cursor.execute("DELETE FROM users_and_roles;")
+    from database import DATABASE_URL
+    if DATABASE_URL:
+        cursor.execute("""
+        TRUNCATE TABLE grievances_and_policy_logs, fund_tranches_and_usage,
+        dss_evaluations, loan_applications, existing_liabilities,
+        land_and_allied_assets, farmer_profiles, users_and_roles
+        RESTART IDENTITY CASCADE;
+        """)
+    else:
+        cursor.execute("DELETE FROM grievances_and_policy_logs;")
+        cursor.execute("DELETE FROM fund_tranches_and_usage;")
+        cursor.execute("DELETE FROM dss_evaluations;")
+        cursor.execute("DELETE FROM loan_applications;")
+        cursor.execute("DELETE FROM existing_liabilities;")
+        cursor.execute("DELETE FROM land_and_allied_assets;")
+        cursor.execute("DELETE FROM farmer_profiles;")
+        cursor.execute("DELETE FROM users_and_roles;")
 
     # 1. Seed System Users (Demo Accounts)
     users = [
