@@ -55,10 +55,12 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
   const [npaCeiling, setNpaCeiling] = useState(4.5);
   const [updatingPolicy, setUpdatingPolicy] = useState(false);
   const [policySuccess, setPolicySuccess] = useState("");
+  const [policyError, setPolicyError] = useState("");
 
   const [activeDirectiveCase, setActiveDirectiveCase] = useState<number | null>(null);
   const [directiveText, setDirectiveText] = useState("");
   const [issuingDirective, setIssuingDirective] = useState(false);
+  const [tribunalError, setTribunalError] = useState("");
 
   const fetchAllData = () => {
     Promise.all([
@@ -93,6 +95,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
   const handlePublishPolicy = async () => {
     setUpdatingPolicy(true);
     setPolicySuccess("");
+    setPolicyError("");
     try {
       const data = await api.updatePolicyConfig({
         smf_minimum_quota: Number(smfQuota) / 100.0,
@@ -104,19 +107,24 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
       });
       setPolicySuccess(data.message);
       fetchAllData();
+    } catch (err: unknown) {
+      setPolicyError(err instanceof Error ? err.message : "Failed to publish policy");
     } finally {
       setUpdatingPolicy(false);
     }
   };
 
   const handleIssueDirective = async (caseId: number) => {
-    if (!directiveText) return;
+    if (!directiveText.trim()) return;
     setIssuingDirective(true);
+    setTribunalError("");
     try {
       await api.issueTribunalDirective(caseId, directiveText);
       setActiveDirectiveCase(null);
       setDirectiveText("");
       fetchAllData();
+    } catch (err: unknown) {
+      setTribunalError(err instanceof Error ? err.message : "Failed to issue directive");
     } finally {
       setIssuingDirective(false);
     }
@@ -281,10 +289,10 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
       {/* TAB 2: BANK COMPLIANCE */}
       {activeTab === "compliance" && (
         <div className="space-y-5">
-          <div className="bento-card p-6 space-y-4">
+          <div className="bento-card p-6 space-y-4 min-w-0">
             <h3 className="text-[15px] font-medium text-[#141513]">SMF Share by Bank vs 55.6% Benchmark</h3>
-            <div className="h-56 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-56 w-full min-w-0">
+              <ResponsiveContainer width="100%" height={224} minWidth={0}>
                 <BarChart data={bankChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,21,19,0.06)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#5e5c55" }} axisLine={false} tickLine={false} />
@@ -434,6 +442,9 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
               <span>{policySuccess}</span>
             </div>
           )}
+          {policyError && (
+            <div className="p-3.5 bg-red-50 rounded-xl text-xs text-red-700">{policyError}</div>
+          )}
         </div>
       )}
 
@@ -441,6 +452,9 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
       {activeTab === "tribunal" && (
         <div className="bento-card p-6 space-y-4">
           <h3 className="text-[15px] font-medium text-[#141513]">Escalated Tribunal</h3>
+          {tribunalError && (
+            <div className="p-3 bg-red-50 rounded-xl text-xs text-red-700">{tribunalError}</div>
+          )}
           {tribunalCases.length === 0 ? (
             <div className="py-12 text-center text-xs text-[#8a877d]">No overdue escalations</div>
           ) : (

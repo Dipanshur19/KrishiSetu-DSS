@@ -39,11 +39,33 @@ def optimize_portfolio(
 
     n = len(applications)
     if n == 0:
+        empty_bucket = {
+            "total_disbursed": 0.0,
+            "smf_share_pct": 0.0,
+            "weaker_share_pct": 0.0,
+            "portfolio_npa_pct": 0.0,
+            "govt_guarantee_utilized": 0.0,
+            "smf_farmers_served": 0,
+            "total_farmers_served": 0,
+            "rbi_smf_quota_met": False,
+            "bank_npa_ceiling_met": True,
+        }
         return {
             "status": "EMPTY",
-            "allocated_ids": [],
+            "dss_allocated_ids": [],
             "pure_profit_ids": [],
-            "metrics": {}
+            "total_applicants": 0,
+            "dss_approved_count": 0,
+            "pure_profit_approved_count": 0,
+            "metrics": {
+                "equitable_dss": empty_bucket,
+                "pure_profit": empty_bucket,
+                "welfare_delta": {
+                    "additional_marginal_farmers_helped": 0,
+                    "smf_capital_increase_rupees": 0.0,
+                    "bank_risk_neutralized_by_fldg": 0.0,
+                },
+            },
         }
 
     L = np.zeros(n)              # Loan amounts requested/sanctioned

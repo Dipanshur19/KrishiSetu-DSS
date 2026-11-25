@@ -9,6 +9,19 @@ interface DistrictLeafletMapProps {
   onSelectDistrict: (district: string) => void;
 }
 
+function getMarkerStyle(d: DistrictHeatmapRow, isSelected: boolean) {
+  const isHighRisk = d.weather_rainfall_anomaly < -15 || d.fldg_coverage_active;
+  const isCompliant = d.smf_share_pct >= 55.6;
+  const color = isHighRisk ? "#d97706" : isCompliant ? "#4d7c0f" : "#5b8fa8";
+  return {
+    radius: isSelected ? 15 : 11,
+    color: isSelected ? "#141513" : color,
+    weight: isSelected ? 2.5 : 1.5,
+    fillColor: color,
+    fillOpacity: isSelected ? 0.9 : 0.78,
+  };
+}
+
 export default function DistrictLeafletMap({
   districts,
   selectedDistrict,
@@ -16,6 +29,9 @@ export default function DistrictLeafletMap({
 }: DistrictLeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
+  const markersRef = useRef<Record<string, import("leaflet").CircleMarker>>({});
+  const onSelectRef = useRef(onSelectDistrict);
+  onSelectRef.current = onSelectDistrict;
 
   const activeDistrict =
     districts.find((d) => d.district === selectedDistrict) || districts[0] || null;
@@ -32,6 +48,7 @@ export default function DistrictLeafletMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      markersRef.current = {};
 
       const map = L.map(containerRef.current, {
         center: [26.35, 80.1],
@@ -39,24 +56,40 @@ export default function DistrictLeafletMap({
         scrollWheelZoom: false,
       });
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        attribution: "&copy; OpenStreetMap &copy; CARTO",
-        maxZoom: 18,
-      }).addTo(map);
+      // Keyless ESRI World Light Gray Canvas + Reference labels (automatic OSM fallback if blocked)
+      const baseLayer = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "&copy; Esri, OpenStreetMap contributors",
+          maxZoom: 16,
+        }
+      ).addTo(map);
 
-      districts.forEach((d) => {
-        const isHighRisk = d.weather_rainfall_anomaly < -15 || d.fldg_coverage_active;
-        const isCompliant = d.smf_share_pct >= 55.6;
-        const color = isHighRisk ? "#d97706" : isCompliant ? "#4d7c0f" : "#5b8fa8";
-        const isSelected = selectedDistrict === d.district;
+      const refLayer = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+        {
+          maxZoom: 16,
+          pane: "overlayPane",
+        }
+      ).addTo(map);
 
-        const circle = L.circleMarker([d.lat, d.lon], {
-          radius: isSelected ? 15 : 11,
-          color: isSelected ? "#141513" : color,
-          weight: isSelected ? 2.5 : 1.5,
-          fillColor: color,
-          fillOpacity: 0.78,
+      let fallbackApplied = false;
+      baseLayer.on("tileerror", () => {
+        if (fallbackApplied) return;
+        fallbackApplied = true;
+        map.removeLayer(baseLayer);
+        map.removeLayer(refLayer);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors",
+          maxZoom: 18,
         }).addTo(map);
+      });
+
+      const coords: [number, number][] = [];
+      districts.forEach((d) => {
+        coords.push([d.lat, d.lon]);
+        const isSelected = selectedDistrict === d.district;
+        const circle = L.circleMarker([d.lat, d.lon], getMarkerStyle(d, isSelected)).addTo(map);
 
         circle.bindPopup(
           `<div style="font-family: inherit; font-size: 12px; min-width: 175px; color: #141513;">
@@ -68,9 +101,19 @@ export default function DistrictLeafletMap({
         );
 
         circle.on("click", () => {
-          onSelectDistrict(d.district);
+          onSelectRef.current(d.district);
         });
+
+        markersRef.current[d.district] = circle;
       });
+
+      if (coords.length > 0) {
+        map.fitBounds(L.latLngBounds(coords), {
+          paddingTopLeft: [28, 28],
+          paddingBottomRight: [28, 96],
+          maxZoom: 8,
+        });
+      }
 
       mapRef.current = map;
     }
@@ -83,14 +126,26 @@ export default function DistrictLeafletMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      markersRef.current = {};
     };
-  }, [districts, selectedDistrict, onSelectDistrict]);
+  }, [districts]);
+
+  useEffect(() => {
+    districts.forEach((d) => {
+      const marker = markersRef.current[d.district];
+      if (marker) {
+        marker.setStyle(getMarkerStyle(d, selectedDistrict === d.district));
+        if (selectedDistrict === d.district) {
+          marker.bringToFront();
+        }
+      }
+    });
+  }, [districts, selectedDistrict]);
 
   return (
-    <div className="relative w-full h-[380px] rounded-2xl overflow-hidden border border-black/[0.08] bg-[#fafaf6]">
+    <div className="relative w-full h-[380px] rounded-2xl overflow-hidden border border-black/[0.08] bg-[#efefea]">
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* Translucent Frosted Bottom Metric Bar matching reference card */}
       {activeDistrict && (
         <div className="absolute inset-x-0 bottom-0 z-[400] bg-[#1e2318]/85 backdrop-blur-md text-white px-5 py-3.5 border-t border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-4">

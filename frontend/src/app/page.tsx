@@ -16,6 +16,7 @@ export default function HomePage() {
   const [selectedDemoUser, setSelectedDemoUser] = useState<DemoUser | null>(null);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [toastMessage, setToastMessage] = useState("");
   const [systemInfoOpen, setSystemInfoOpen] = useState(false);
 
@@ -34,12 +35,16 @@ export default function HomePage() {
   };
 
   const handleLoginDemo = async (email: string) => {
-    const res = await api.loginDemo(email);
-    setAuthSession(res);
-    if (res.user.role === "farmer") setActiveRole("farmer");
-    else if (res.user.role === "bank_officer") setActiveRole("bank");
-    else if (res.user.role === "govt_auditor") setActiveRole("govt");
-    showToast(`Signed in as ${res.user.full_name}`);
+    try {
+      const res = await api.loginDemo(email);
+      setAuthSession(res);
+      if (res.user.role === "farmer") setActiveRole("farmer");
+      else if (res.user.role === "bank_officer") setActiveRole("bank");
+      else if (res.user.role === "govt_auditor") setActiveRole("govt");
+      showToast(`Signed in as ${res.user.full_name}`);
+    } catch (err: unknown) {
+      showToast("Sign in failed: " + (err instanceof Error ? err.message : "Error"));
+    }
   };
 
   const handleLogout = () => {
@@ -55,8 +60,9 @@ export default function HomePage() {
       showToast(res.message || "Sample data reset");
       const users = await api.getDemoAccounts();
       setDemoUsers(users);
+      setRefreshKey((k) => k + 1);
     } catch (err: unknown) {
-      alert("Reset failed: " + (err instanceof Error ? err.message : "Error"));
+      showToast("Reset failed: " + (err instanceof Error ? err.message : "Error"));
     } finally {
       setIsResetting(false);
     }
@@ -88,9 +94,9 @@ export default function HomePage() {
       )}
 
       <main className="flex-1 pb-12">
-        {activeRole === "farmer" && <FarmerPortal demoUser={selectedDemoUser} lang={lang} />}
-        {activeRole === "bank" && <BankWorkbench demoUser={selectedDemoUser} lang={lang} />}
-        {activeRole === "govt" && <GovtConsole demoUser={selectedDemoUser} lang={lang} />}
+        {activeRole === "farmer" && <FarmerPortal key={`farmer-${refreshKey}`} demoUser={selectedDemoUser} lang={lang} />}
+        {activeRole === "bank" && <BankWorkbench key={`bank-${refreshKey}`} demoUser={selectedDemoUser} lang={lang} />}
+        {activeRole === "govt" && <GovtConsole key={`govt-${refreshKey}`} demoUser={selectedDemoUser} lang={lang} />}
       </main>
 
       <SystemInfoModal isOpen={systemInfoOpen} onClose={() => setSystemInfoOpen(false)} />

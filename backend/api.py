@@ -81,6 +81,8 @@ class EstimateRequest(BaseModel):
     marketing_tieup: str = "Cooperative"
     district: str = "Kanpur Dehat"
     requested_amount: float = 50000.0
+    irrigation_source: str = "Well"
+    pmfby_optin: bool = True
 
 class OptimizerRequest(BaseModel):
     total_fund_budget: float = 5000000.0
@@ -311,7 +313,7 @@ def estimate_eligibility(req: EstimateRequest):
         "area_acres": req.area_acres,
         "ownership_type": req.ownership_type,
         "livestock_count": req.livestock_count,
-        "irrigation_source": "Well",
+        "irrigation_source": req.irrigation_source,
         "movable_asset_val_k": 50000.0,
         "immovable_asset_val_l": req.area_acres * 150000.0
     }
@@ -319,7 +321,7 @@ def estimate_eligibility(req: EstimateRequest):
         "requested_amount": req.requested_amount,
         "primary_crop": req.primary_crop,
         "marketing_tieup": req.marketing_tieup,
-        "pmfby_optin": True
+        "pmfby_optin": req.pmfby_optin
     }
     
     dt_res = evaluate_decision_tree(farmer_stub, land_stub, [], app_stub, policy)
@@ -348,12 +350,41 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
     cursor = conn.cursor()
 
     # 1. Create or fetch farmer profile
-    pmkisan_id = app_data.pmkisan_id or f"UP{datetime.now().strftime('%m%d%H%M%S')}"
-    farmer_uid = f"FARM-UP-{app_data.district[:3].upper()}-{datetime.now().strftime('%H%M%S')}"
-    
+    pmkisan_id = (app_data.pmkisan_id or "").strip() or f"UP{datetime.now().strftime('%m%d%H%M%S')}{uuid.uuid4().hex[:3].upper()}"
+    farmer_uid = f"FARM-UP-{app_data.district[:3].upper()}-{uuid.uuid4().hex[:6].upper()}"
+    area_ha = round(app_data.area_acres / 2.47105, 3)
+    net_worth = app_data.movable_asset_k + app_data.immovable_asset_l
+
     existing = cursor.execute("SELECT id FROM farmer_profiles WHERE pmkisan_id = ?", (pmkisan_id,)).fetchone()
     if existing:
         farmer_id = existing["id"]
+        cursor.execute("""
+        UPDATE farmer_profiles
+        SET full_name = ?, phone = ?, gender = ?, social_category = ?, village = ?, district = ?
+        WHERE id = ?;
+        """, (app_data.full_name, app_data.phone, app_data.gender, app_data.social_category, app_data.village, app_data.district, farmer_id))
+
+        existing_land = cursor.execute("SELECT id FROM land_and_allied_assets WHERE farmer_id = ? LIMIT 1", (farmer_id,)).fetchone()
+        if existing_land:
+            cursor.execute("""
+            UPDATE land_and_allied_assets
+            SET survey_khasra_no = ?, ownership_type = ?, area_acres = ?, area_hectares = ?,
+                irrigation_source = ?, distance_to_mandi_km = ?, livestock_count = ?,
+                movable_asset_val_k = ?, immovable_asset_val_l = ?, net_worth = ?
+            WHERE id = ?;
+            """, (app_data.survey_khasra_no, app_data.ownership_type, app_data.area_acres, area_ha,
+                  app_data.irrigation_source, app_data.distance_to_mandi_km, app_data.livestock_count,
+                  app_data.movable_asset_k, app_data.immovable_asset_l, net_worth, existing_land["id"]))
+        else:
+            cursor.execute("""
+            INSERT INTO land_and_allied_assets (
+                farmer_id, survey_khasra_no, ownership_type, area_acres, area_hectares,
+                irrigated_pct, irrigation_source, distance_to_mandi_km, livestock_count,
+                movable_asset_val_k, immovable_asset_val_l, net_worth
+            ) VALUES (?, ?, ?, ?, ?, 100.0, ?, ?, ?, ?, ?, ?);
+            """, (farmer_id, app_data.survey_khasra_no, app_data.ownership_type, app_data.area_acres, area_ha,
+                  app_data.irrigation_source, app_data.distance_to_mandi_km, app_data.livestock_count,
+                  app_data.movable_asset_k, app_data.immovable_asset_l, net_worth))
     else:
         cursor.execute("""
         INSERT INTO farmer_profiles (
@@ -363,18 +394,15 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
         """, (farmer_uid, pmkisan_id, app_data.full_name, app_data.phone, app_data.gender, app_data.social_category, True, True, True, app_data.village, app_data.district))
         farmer_id = cursor.lastrowid
 
-    # 2. Insert Land
-    area_ha = round(app_data.area_acres / 2.47105, 3)
-    net_worth = app_data.movable_asset_k + app_data.immovable_asset_l
-    cursor.execute("""
-    INSERT INTO land_and_allied_assets (
-        farmer_id, survey_khasra_no, ownership_type, area_acres, area_hectares,
-        irrigated_pct, irrigation_source, distance_to_mandi_km, livestock_count,
-        movable_asset_val_k, immovable_asset_val_l, net_worth
-    ) VALUES (?, ?, ?, ?, ?, 100.0, ?, ?, ?, ?, ?, ?);
-    """, (farmer_id, app_data.survey_khasra_no, app_data.ownership_type, app_data.area_acres, area_ha,
-          app_data.irrigation_source, app_data.distance_to_mandi_km, app_data.livestock_count,
-          app_data.movable_asset_k, app_data.immovable_asset_l, net_worth))
+        cursor.execute("""
+        INSERT INTO land_and_allied_assets (
+            farmer_id, survey_khasra_no, ownership_type, area_acres, area_hectares,
+            irrigated_pct, irrigation_source, distance_to_mandi_km, livestock_count,
+            movable_asset_val_k, immovable_asset_val_l, net_worth
+        ) VALUES (?, ?, ?, ?, ?, 100.0, ?, ?, ?, ?, ?, ?);
+        """, (farmer_id, app_data.survey_khasra_no, app_data.ownership_type, app_data.area_acres, area_ha,
+              app_data.irrigation_source, app_data.distance_to_mandi_km, app_data.livestock_count,
+              app_data.movable_asset_k, app_data.immovable_asset_l, net_worth))
     
     # 3. Insert Liabilities if any
     liabilities_list = []
@@ -392,7 +420,7 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
         })
 
     # 4. Insert Loan Application
-    app_no = f"KCC-UP-{datetime.now().strftime('%Y%m%d%H%M')}"
+    app_no = f"KCC-UP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     cursor.execute("""
     INSERT INTO loan_applications (
         application_no, farmer_id, facility_type, requested_amount,
@@ -809,8 +837,15 @@ def get_govt_macro_kpis():
 
 @app.get("/api/govt/district-heatmap")
 def get_district_heatmap():
-    conn = get_db_connection()
+    from concurrent.futures import ThreadPoolExecutor
+
     districts = DISTRICTS
+    with ThreadPoolExecutor(max_workers=len(districts)) as pool:
+        weather_map = dict(
+            zip(districts, pool.map(lambda d: fetch_live_open_meteo_weather(d, allow_network=True), districts))
+        )
+
+    conn = get_db_connection()
     result = []
 
     for dist in districts:
@@ -830,7 +865,7 @@ def get_district_heatmap():
         smf_sum = sum(float(a["sanctioned_amount"] or 0) for a in apps if a["status"] == "approved" and a["farmer_classification"] in ["Marginal", "Small"])
         smf_pct = round((smf_sum / sanctioned_sum * 100), 1) if sanctioned_sum > 0 else 0.0
 
-        weather = fetch_live_open_meteo_weather(dist, allow_network=True)
+        weather = weather_map.get(dist, {})
         d_meta = DISTRICT_META.get(dist, {})
 
         result.append({

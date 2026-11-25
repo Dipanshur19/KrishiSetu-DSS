@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Play, ArrowUpRight, CheckCircle2 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -51,14 +51,24 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   const [optimizing, setOptimizing] = useState(false);
   const [optResult, setOptResult] = useState<OptimizerResult | null>(null);
   const [disbursing, setDisbursing] = useState(false);
+  const [approvingSingle, setApprovingSingle] = useState(false);
   const [disburseSuccess, setDisburseSuccess] = useState("");
+  const [actionError, setActionError] = useState("");
 
   const [bankGrievances, setBankGrievances] = useState<Grievance[]>([]);
   const [respondingId, setRespondingId] = useState<number | null>(null);
   const [responseText, setResponseText] = useState("");
+  const [resolvingGrievance, setResolvingGrievance] = useState(false);
   const [isDecisionTreeOpen, setIsDecisionTreeOpen] = useState(false);
 
-  const fetchApplications = () => {
+  const selectedIdRef = useRef<number | null>(null);
+  selectedIdRef.current = selectedAppDetail?.id ?? null;
+
+  const loadApplicationDetail = useCallback((appId: number) => {
+    api.getApplicationOutcome(appId).then(setSelectedAppDetail).catch(console.error);
+  }, []);
+
+  const fetchApplications = useCallback(() => {
     setLoadingApps(true);
     api.getBankApplications({
       district: districtFilter,
@@ -67,30 +77,35 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
     })
       .then((data) => {
         setApplications(data);
-        if (data.length > 0 && !selectedAppDetail) {
+        if (data.length === 0) {
+          setSelectedAppDetail(null);
+        } else if (!selectedIdRef.current || !data.some((a) => a.id === selectedIdRef.current)) {
           loadApplicationDetail(data[0].id);
         }
       })
       .catch(console.error)
       .finally(() => setLoadingApps(false));
-  };
+  }, [districtFilter, categoryFilter, searchQuery, loadApplicationDetail]);
 
-  const loadApplicationDetail = (appId: number) => {
-    api.getApplicationOutcome(appId).then(setSelectedAppDetail).catch(console.error);
-  };
-
-  const fetchGrievances = () => {
+  const fetchGrievances = useCallback(() => {
     api.getBankGrievances().then(setBankGrievances).catch(console.error);
-  };
+  }, []);
 
   useEffect(() => {
-    fetchApplications();
     fetchGrievances();
-  }, [districtFilter, categoryFilter, searchQuery]);
+  }, [fetchGrievances]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchApplications();
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [fetchApplications]);
 
   const handleRunOptimizer = async () => {
     setOptimizing(true);
     setDisburseSuccess("");
+    setActionError("");
     try {
       const data = await api.runOptimizer({
         total_fund_budget: Number(budgetSlider),
@@ -101,7 +116,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
       });
       setOptResult(data);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Optimization failed");
+      setActionError(err instanceof Error ? err.message : "Optimization failed");
     } finally {
       setOptimizing(false);
     }
@@ -110,23 +125,46 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
   const handleDisburseBatch = async () => {
     if (!optResult?.dss_allocated_ids?.length) return;
     setDisbursing(true);
+    setActionError("");
     try {
       const data = await api.disburseBatch(optResult.dss_allocated_ids);
       setDisburseSuccess(data.message);
       fetchApplications();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed");
+      setActionError(err instanceof Error ? err.message : "Batch disbursement failed");
     } finally {
       setDisbursing(false);
     }
   };
 
+  const handleApproveSingle = async (appId: number) => {
+    setApprovingSingle(true);
+    setActionError("");
+    try {
+      await api.disburseBatch([appId]);
+      fetchApplications();
+      loadApplicationDetail(appId);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Approval failed");
+    } finally {
+      setApprovingSingle(false);
+    }
+  };
+
   const handleResolveGrievance = async (id: number) => {
-    if (!responseText) return;
-    await api.resolveBankGrievance(id, responseText, "resolved");
-    setRespondingId(null);
-    setResponseText("");
-    fetchGrievances();
+    if (!responseText.trim()) return;
+    setResolvingGrievance(true);
+    setActionError("");
+    try {
+      await api.resolveBankGrievance(id, responseText, "resolved");
+      setRespondingId(null);
+      setResponseText("");
+      fetchGrievances();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to submit resolution");
+    } finally {
+      setResolvingGrievance(false);
+    }
   };
 
   // Smooth Cash-Flow AreaChart for Bank Inspector
@@ -249,6 +287,10 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       <tr>
                         <td colSpan={5} className="py-10 text-center text-[#8a877d]">Loading...</td>
                       </tr>
+                    ) : applications.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-10 text-center text-[#8a877d]">No matching applications</td>
+                      </tr>
                     ) : (
                       applications.map((app) => {
                         const isSelected = selectedAppDetail?.id === app.id;
@@ -295,11 +337,14 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
             </div>
 
             {/* Right Model Inspector Bento Stack (6 cols) */}
-            <div className="lg:col-span-6 space-y-5">
+            <div className="lg:col-span-6 space-y-5 min-w-0">
+              {actionError && (
+                <div className="bento-card p-3.5 bg-red-50 text-xs text-red-700">{actionError}</div>
+              )}
               {selectedAppDetail && (
                 <>
                   {/* Card 1: Cash-Flow AreaChart */}
-                  <div className="bento-card p-5 space-y-4">
+                  <div className="bento-card p-5 space-y-4 min-w-0">
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="text-xs text-[#8a877d]">
@@ -313,15 +358,13 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       <div className="flex items-center space-x-2">
                         {selectedAppDetail.status !== "approved" && (
                           <button
-                            onClick={() => {
-                              api.disburseBatch([selectedAppDetail.id]).then(() => {
-                                fetchApplications();
-                                loadApplicationDetail(selectedAppDetail.id);
-                              });
-                            }}
-                            className="px-3.5 py-1.5 rounded-full bg-[#141513] text-[#d4f04c] text-xs font-medium hover:bg-black/85"
+                            disabled={approvingSingle}
+                            onClick={() => handleApproveSingle(selectedAppDetail.id)}
+                            className="px-3.5 py-1.5 rounded-full bg-[#141513] text-[#d4f04c] text-xs font-medium hover:bg-black/85 disabled:opacity-60"
                           >
-                            Approve ₹{Number(selectedAppDetail.sanctioned_amount).toLocaleString("en-IN")}
+                            {approvingSingle
+                              ? "Approving..."
+                              : `Approve ₹${Number(selectedAppDetail.sanctioned_amount).toLocaleString("en-IN")}`}
                           </button>
                         )}
                         <button
@@ -334,8 +377,8 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       </div>
                     </div>
 
-                    <div className="h-44 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-44 w-full min-w-0">
+                      <ResponsiveContainer width="100%" height={176} minWidth={0}>
                         <AreaChart data={cashflowCurveData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                           <defs>
                             <linearGradient id="bankHarvestGrad" x1="0" y1="0" x2="0" y2="1">
@@ -382,18 +425,18 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                       metric3Val={`${selectedAppDetail.weather_profile?.forecast_14d_precip_mm ?? 0} mm`}
                     />
 
-                    <div className="bento-card p-5 space-y-2">
+                    <div className="bento-card p-5 space-y-2 min-w-0">
                       <div className="flex items-center justify-between">
                         <h3 className="text-[15px] font-medium text-[#141513]">SHAP Risk Drivers</h3>
                         <span className="text-xs font-mono text-[#5e5c55]">
                           {(selectedAppDetail.pd_score * 100).toFixed(1)}% PD
                         </span>
                       </div>
-                      <div className="h-44 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-44 w-full min-w-0">
+                        <ResponsiveContainer width="100%" height={176} minWidth={0}>
                           <BarChart data={shapChartData} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                             <XAxis type="number" tick={{ fontSize: 10, fill: "#8a877d" }} unit="%" axisLine={false} tickLine={false} />
-                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#5e5c55" }} width={105} axisLine={false} tickLine={false} />
+                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#5e5c55" }} width={118} axisLine={false} tickLine={false} />
                             <ReferenceLine x={0} stroke="rgba(20,21,19,0.2)" />
                             <Tooltip
                               formatter={(val) => [`${Number(val) > 0 ? "+" : ""}${val}%`, "SHAP"]}
@@ -502,10 +545,10 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
           {optResult && (
             <div className="space-y-5">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div className="bento-card p-5 space-y-3">
+                <div className="bento-card p-5 space-y-3 min-w-0">
                   <h4 className="text-sm font-medium text-[#141513]">DSS vs Pure Profit</h4>
-                  <div className="h-52 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-52 w-full min-w-0">
+                    <ResponsiveContainer width="100%" height={208} minWidth={0}>
                       <BarChart data={optimizerChartData} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,21,19,0.06)" vertical={false} />
                         <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "#8a877d" }} axisLine={false} tickLine={false} />
@@ -602,6 +645,9 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                 </button>
               </div>
 
+              {actionError && (
+                <div className="bento-card p-4 text-xs text-red-700 bg-red-50">{actionError}</div>
+              )}
               {disburseSuccess && (
                 <div className="bento-card p-4 text-xs text-[#365314] bg-[#eef7d6] flex items-center space-x-2">
                   <CheckCircle2 className="w-4 h-4" />
@@ -617,6 +663,9 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
       {activeTab === "grievances" && (
         <div className="bento-card p-6 space-y-4">
           <h3 className="text-[15px] font-medium text-[#141513]">Open Appeals</h3>
+          {actionError && (
+            <div className="p-3 bg-red-50 rounded-xl text-xs text-red-700">{actionError}</div>
+          )}
           <div className="space-y-3">
             {bankGrievances.map((g) => (
               <div key={g.id} className="bento-surface-soft p-4 space-y-2.5">
@@ -650,10 +699,11 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                         Cancel
                       </button>
                       <button
+                        disabled={resolvingGrievance}
                         onClick={() => handleResolveGrievance(g.id)}
-                        className="px-4 py-1 bg-[#141513] text-white rounded-full text-xs font-medium"
+                        className="px-4 py-1 bg-[#141513] text-white rounded-full text-xs font-medium disabled:opacity-60"
                       >
-                        Resolve
+                        {resolvingGrievance ? "Saving..." : "Resolve"}
                       </button>
                     </div>
                   </div>

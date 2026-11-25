@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { RefreshCw, Globe, User, X, Check, Info } from "lucide-react";
 import { AuthSession, DemoUser, Language } from "@/types/dss";
 import { t } from "@/i18n/translations";
@@ -38,6 +38,18 @@ export default function Header({
 }: HeaderProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [accountMenuOpen]);
 
   const handleQuickLogin = async (email: string) => {
     setLoggingIn(true);
@@ -104,7 +116,7 @@ export default function Header({
         </nav>
 
         {/* Right Icon Utility Cluster + Profile Switcher */}
-        <div className="flex items-center space-x-2 shrink-0 relative">
+        <div ref={menuRef} className="flex items-center space-x-2 shrink-0 relative">
           <button
             onClick={() => setLang(lang === "en" ? "hi" : "en")}
             className="h-9 px-3 rounded-full bg-white border border-black/[0.08] text-xs font-medium text-[#141513] hover:bg-[#fafaf6] flex items-center space-x-1.5 transition-colors"

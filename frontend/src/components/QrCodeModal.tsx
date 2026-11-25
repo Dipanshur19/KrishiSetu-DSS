@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { X, QrCode, Store, CheckCircle, AlertCircle } from "lucide-react";
 import { Merchant, Tranche } from "@/types/dss";
 import { api } from "@/lib/api";
@@ -26,6 +26,14 @@ export default function QrCodeModal({
   const [loading, setLoading] = useState(false);
   const [redeemedMerchant, setRedeemedMerchant] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    setRedeemedMerchant("");
+    setErrorMsg("");
+    if (merchants.length > 0 && !merchants.some((m) => m.merchant_id === selectedMerchant)) {
+      setSelectedMerchant(merchants[0].merchant_id);
+    }
+  }, [voucher?.id, isOpen, merchants]);
 
   if (!isOpen || !voucher) return null;
 

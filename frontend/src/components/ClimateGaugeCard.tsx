@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useId } from "react";
 import { ArrowUpRight, Sun, Wind, CloudRain } from "lucide-react";
 
 interface ClimateGaugeCardProps {
@@ -32,6 +32,7 @@ export default function ClimateGaugeCard({
   metric3Val,
   onExpand,
 }: ClimateGaugeCardProps) {
+  const gradId = useId();
   const clamped = Math.max(0.05, Math.min(1, progressRatio));
   const r = 82;
   const cx = 110;
@@ -61,7 +62,7 @@ export default function ClimateGaugeCard({
       <div className="relative flex flex-col items-center justify-center py-2">
         <svg viewBox="0 0 220 120" className="w-full max-w-[240px]">
           <defs>
-            <linearGradient id="krishiArcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#a3d929" />
               <stop offset="65%" stopColor="#d4f04c" />
               <stop offset="100%" stopColor="#8bb8cc" />
@@ -80,7 +81,7 @@ export default function ClimateGaugeCard({
           <path
             d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
             fill="none"
-            stroke="url(#krishiArcGrad)"
+            stroke={`url(#${gradId})`}
             strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={circumference}

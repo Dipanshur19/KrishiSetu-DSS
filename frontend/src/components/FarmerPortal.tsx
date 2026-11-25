@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2,
   QrCode,
@@ -76,10 +76,15 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
   const [estimate, setEstimate] = useState<EligibilityEstimate | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
+  const [submittingApp, setSubmittingApp] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const [submittedApps, setSubmittedApps] = useState<{ id: number; label: string }[]>([]);
 
   const [outcomeAppId, setOutcomeAppId] = useState(1);
   const [outcome, setOutcome] = useState<FarmerApplicationOutcome | null>(null);
   const [loadingOutcome, setLoadingOutcome] = useState(false);
+  const [outcomeError, setOutcomeError] = useState("");
 
   const [isDecisionTreeOpen, setIsDecisionTreeOpen] = useState(false);
   const [activeVoucherModal, setActiveVoucherModal] = useState<Tranche | null>(null);
@@ -90,9 +95,13 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
   const [grievanceDocName, setGrievanceDocName] = useState("khasra_extract.pdf");
   const [grievancesList, setGrievancesList] = useState<Grievance[]>([]);
   const [grievanceSuccess, setGrievanceSuccess] = useState("");
+  const [grievanceError, setGrievanceError] = useState("");
+  const [uploadingGrievanceDoc, setUploadingGrievanceDoc] = useState(false);
 
   const [sowingUploading, setSowingUploading] = useState(false);
   const [sowingSuccess, setSowingSuccess] = useState("");
+  const [sowingError, setSowingError] = useState("");
+  const recognitionRef = useRef<{ stop?: () => void } | null>(null);
 
   useEffect(() => {
     api.getScaleOfFinance()
@@ -118,12 +127,15 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
   const loadOutcome = (id: number) => {
     setLoadingOutcome(true);
+    setOutcomeError("");
     api.getApplicationOutcome(id)
       .then((data) => {
         setOutcome(data);
         if (data.grievances) setGrievancesList(data.grievances);
       })
-      .catch(console.error)
+      .catch((err: unknown) => {
+        setOutcomeError(err instanceof Error ? err.message : "Failed to load application outcome");
+      })
       .finally(() => setLoadingOutcome(false));
   };
 
@@ -142,6 +154,8 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
         marketing_tieup: formData.marketing_tieup,
         district: formData.district,
         requested_amount: Number(formData.requested_amount) || 50000,
+        irrigation_source: formData.irrigation_source,
+        pmfby_optin: formData.pmfby_optin,
       })
         .then((data) => setEstimate(data))
         .catch(console.error)
@@ -157,9 +171,12 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
     formData.marketing_tieup,
     formData.district,
     formData.requested_amount,
+    formData.irrigation_source,
+    formData.pmfby_optin,
   ]);
 
   const toggleSpeechRecognition = () => {
+    setVoiceNotice("");
     const win = window as unknown as {
       SpeechRecognition?: new () => {
         lang: string;
@@ -169,6 +186,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
         onerror: () => void;
         onresult: (e: { results: { transcript: string }[][] }) => void;
         start: () => void;
+        stop: () => void;
       };
       webkitSpeechRecognition?: new () => {
         lang: string;
@@ -178,24 +196,30 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
         onerror: () => void;
         onresult: (e: { results: { transcript: string }[][] }) => void;
         start: () => void;
+        stop: () => void;
       };
     };
 
     const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
     if (!SpeechRec) {
-      alert("Speech recognition requires Chrome or Edge.");
+      setVoiceNotice("Speech recognition requires Chrome or Edge.");
       return;
     }
     if (isListening) {
+      recognitionRef.current?.stop?.();
       setIsListening(false);
       return;
     }
     const recognition = new SpeechRec();
+    recognitionRef.current = recognition;
     recognition.lang = lang === "hi" ? "hi-IN" : "en-IN";
     recognition.interimResults = false;
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
+    recognition.onerror = () => {
+      setIsListening(false);
+      setVoiceNotice("Microphone permission or speech recognition unavailable.");
+    };
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       if (wizardStep === 1) {
@@ -210,30 +234,47 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
   const handleApplicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (wizardStep < 4) {
+      setWizardStep(wizardStep + 1);
+      return;
+    }
+    setSubmittingApp(true);
+    setSubmitError("");
     try {
       const data = await api.submitApplication(formData);
+      setSubmittedApps((prev) => [
+        { id: data.application_id, label: formData.full_name.split(" ")[0] || `#${data.application_id}` },
+        ...prev.filter((item) => item.id !== data.application_id).slice(0, 2),
+      ]);
       setOutcomeAppId(data.application_id);
       loadOutcome(data.application_id);
       setActiveTab("outcome");
     } catch (err: unknown) {
-      alert("Submission failed: " + (err instanceof Error ? err.message : "Error"));
+      setSubmitError(err instanceof Error ? err.message : "Application submission failed");
+    } finally {
+      setSubmittingApp(false);
     }
   };
 
   const handleGrievanceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadingGrievanceDoc(true);
+    setGrievanceError("");
     try {
       const uploaded = await api.uploadFile(file);
       setGrievanceDocName(uploaded.filename);
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      setGrievanceError(err instanceof Error ? err.message : "File upload failed");
+    } finally {
+      setUploadingGrievanceDoc(false);
     }
   };
 
   const handleSowingProof = async (trancheId: number, file?: File) => {
     setSowingUploading(true);
     setSowingSuccess("");
+    setSowingError("");
     try {
       let photoRef = "crop_sowing_gps_proof.jpg";
       if (file) {
@@ -248,7 +289,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
       setSowingSuccess(data.message);
       loadOutcome(outcomeAppId);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Upload failed");
+      setSowingError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setSowingUploading(false);
     }
@@ -256,7 +297,9 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
 
   const handleGrievanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!grievanceText) return;
+    if (!grievanceText.trim()) return;
+    setGrievanceError("");
+    setGrievanceSuccess("");
     try {
       const data = await api.fileGrievance({
         application_id: outcomeAppId,
@@ -269,7 +312,7 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
       setGrievanceText("");
       loadOutcome(outcomeAppId);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to submit");
+      setGrievanceError(err instanceof Error ? err.message : "Failed to submit appeal");
     }
   };
 
@@ -681,13 +724,19 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                 <button
                   type="submit"
                   form="farmer-wizard-form"
-                  className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85"
+                  disabled={submittingApp}
+                  className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85 disabled:opacity-60"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{t(lang, "submit_apply")}</span>
+                  <span>{submittingApp ? "Submitting..." : t(lang, "submit_apply")}</span>
                 </button>
               )}
             </div>
+            {(submitError || voiceNotice) && (
+              <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                {submitError || voiceNotice}
+              </div>
+            )}
           </div>
 
           {/* Right Live Intelligence Bento Column (4 cols) */}
@@ -751,8 +800,9 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
               <span>Application</span>
               <span className="font-mono font-medium text-[#141513]">{outcome?.application_no || "..."}</span>
             </div>
-            <div className="flex items-center space-x-1.5">
+            <div className="flex flex-wrap items-center space-x-1.5 gap-y-1.5">
               {[
+                ...submittedApps,
                 { id: 1, label: "Ram Charan" },
                 { id: 2, label: "Sunita Devi" },
                 { id: 3, label: "Kallu Ram" },
@@ -772,12 +822,16 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
             </div>
           </div>
 
+          {outcomeError && (
+            <div className="bento-card p-4 bg-red-50 text-xs text-red-700">{outcomeError}</div>
+          )}
+
           {loadingOutcome ? (
             <div className="bento-card p-12 text-center text-xs text-[#8a877d]">Loading outcome...</div>
           ) : outcome ? (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* Main Smooth Harvest AreaChart Bento Card */}
-              <div className="lg:col-span-8 bento-card p-6 space-y-4">
+              <div className="lg:col-span-8 bento-card p-6 space-y-4 min-w-0">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center space-x-2">
@@ -810,8 +864,8 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                 </div>
 
                 {/* Smooth Recharts AreaChart matching Soil Intelligence */}
-                <div className="h-56 w-full pt-2">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-56 w-full pt-2 min-w-0">
+                  <ResponsiveContainer width="100%" height={216} minWidth={0}>
                     <AreaChart data={harvestCurveData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="farmerExpectedGrad" x1="0" y1="0" x2="0" y2="1">
@@ -998,6 +1052,9 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
           {sowingSuccess && (
             <div className="bento-card p-4 text-xs text-[#365314] bg-[#eef7d6]">{sowingSuccess}</div>
           )}
+          {sowingError && (
+            <div className="bento-card p-4 text-xs text-red-700 bg-red-50">{sowingError}</div>
+          )}
         </div>
       )}
 
@@ -1039,10 +1096,15 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                   onChange={handleGrievanceFileUpload}
                   className="w-full text-xs text-[#5e5c55] file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border file:border-black/10 file:text-xs file:bg-white"
                 />
-                <span className="text-[11px] text-[#8a877d] font-mono mt-1 block">{grievanceDocName}</span>
+                <span className="text-[11px] text-[#8a877d] font-mono mt-1 block">
+                  {uploadingGrievanceDoc ? "Uploading document..." : grievanceDocName}
+                </span>
               </div>
               {grievanceSuccess && (
                 <div className="p-3 bg-[#eef7d6] rounded-xl text-xs text-[#365314]">{grievanceSuccess}</div>
+              )}
+              {grievanceError && (
+                <div className="p-3 bg-red-50 rounded-xl text-xs text-red-700">{grievanceError}</div>
               )}
               <button
                 type="submit"
@@ -1078,7 +1140,11 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
                     )}
                     <div className="flex items-center space-x-1 text-[11px] text-[#8a877d] font-mono">
                       <Clock className="w-3 h-3" />
-                      <span>{new Date(g.created_at).toLocaleDateString()}</span>
+                      <span>
+                        {Number.isNaN(new Date(g.created_at).getTime())
+                          ? String(g.created_at).slice(0, 10)
+                          : new Date(g.created_at).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
                 ))}

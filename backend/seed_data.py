@@ -11,7 +11,7 @@ from database import get_db_connection, init_db, DATABASE_URL
 from models.decision_tree import evaluate_decision_tree
 from models.forecast_model import calculate_forecast_and_dscr
 from models.risk_model import calculate_hybrid_risk_and_shap
-from models.voucher_system import generate_tranches_for_application
+from models.voucher_system import generate_tranches_for_application, AUTHORIZED_AGRI_MERCHANTS
 
 DISTRICTS = ["Kanpur Dehat", "Kanpur Nagar", "Unnao", "Jhansi", "Lucknow", "Barabanki", "Fatehpur"]
 VILLAGES_BY_DISTRICT = {
@@ -270,10 +270,24 @@ def seed_database():
 
         if i <= 35:
             tranches = generate_tranches_for_application(app_id, sanction_amt)
+            merchant = AUTHORIZED_AGRI_MERCHANTS[(i - 1) % len(AUTHORIZED_AGRI_MERCHANTS)]
             for tr in tranches:
+                tr_status = tr["status"]
+                tr_merchant = tr["merchant_name"]
+                tr_ts = tr["redemption_timestamp"]
+                # Keep farmer_id=1 unredeemed for live QR demo; mark ~65% of remaining Tranche 1 vouchers redeemed
+                if i > 1 and i % 3 != 0:
+                    if tr["tranche_no"] == 1:
+                        tr_status = "redeemed"
+                        tr_merchant = merchant["name"]
+                        tr_ts = (datetime.now() - timedelta(days=(i % 7) + 1)).isoformat()
+                    elif tr["tranche_no"] == 3 and i % 2 == 0:
+                        tr_status = "disbursed"
+                        tr_merchant = "Digital Crop Survey GPS"
+                        tr_ts = (datetime.now() - timedelta(days=1)).isoformat()
                 tranche_rows.append((
                     app_id, tr["tranche_no"], tr["tranche_name"], tr["percentage"], tr["amount"],
-                    tr["status"], tr["voucher_code"], tr["qr_payload"], tr["merchant_name"], tr["redemption_timestamp"]
+                    tr_status, tr["voucher_code"], tr["qr_payload"], tr_merchant, tr_ts
                 ))
 
         if i in [2, 5, 12, 19, 27, 44, 58, 71]:
