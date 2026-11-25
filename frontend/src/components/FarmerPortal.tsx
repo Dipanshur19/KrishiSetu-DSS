@@ -241,9 +241,13 @@ export default function FarmerPortal({
     try {
       await fn();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : tr("Try again.", "पुनः प्रयास करें।"),
-      );
+      const msg =
+        e instanceof Error
+          ? e.message
+          : e && typeof e === "object" && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "";
+      setError(msg || tr("Try again.", "पुनः प्रयास करें।"));
     } finally {
       setBusy(false);
     }

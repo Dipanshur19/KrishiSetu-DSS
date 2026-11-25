@@ -556,7 +556,7 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   type="range"
                   min="30"
                   max="75"
-                  step="2"
+                  step="0.1"
                   value={smfQuotaSlider}
                   onChange={(e) => setSmfQuotaSlider(parseFloat(e.target.value))}
                   className="w-full cursor-pointer"
