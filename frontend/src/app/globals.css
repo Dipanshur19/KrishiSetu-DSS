@@ -2,6 +2,11 @@
 @import "leaflet/dist/leaflet.css";
 
 @layer base {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
   body {
     font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background-color: #f5f5ee;
@@ -32,6 +37,71 @@
   border-radius: 12px;
 }
 
+.field {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(20, 21, 19, 0.1);
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.35rem;
+  background-color: #fafaf6;
+  font-size: 0.8125rem;
+  color: #141513;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.field:focus {
+  outline: none;
+  border-color: #141513;
+  background-color: #ffffff;
+}
+
+.control,
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.control {
+  border: 1px solid rgba(20, 21, 19, 0.1);
+  background-color: #ffffff;
+  color: #141513;
+}
+
+.control:hover:not(:disabled) {
+  background-color: #fafaf6;
+}
+
+.control:disabled {
+  background-color: #f0f0e8;
+  color: #8a877d;
+  cursor: not-allowed;
+}
+
+.primary {
+  background-color: #141513;
+  color: #ffffff;
+  border: 1px solid #141513;
+}
+
+.primary:hover:not(:disabled) {
+  background-color: rgba(20, 21, 19, 0.86);
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 input[type="range"] {
   accent-color: #141513;
 }
@@ -45,10 +115,8 @@ input[type="range"] {
   max-width: none !important;
   max-height: none !important;
 }
-.control, .primary { border-radius: .7rem; padding: .55rem .9rem; font-size: .875rem; cursor: pointer; }
-.control { border: 1px solid #cfd4c3; background: white; }
-.control:disabled { background: #e4ecd6; color: #435633; }
-.primary { background: #314e22; color: white; }
-.primary:disabled { opacity: .55; cursor: wait; }
-.field { display: block; width: 100%; min-width: 0; border: 1px solid #cfd4c3; border-radius: .65rem; padding: .65rem; margin-top: .3rem; background: white; }
-:focus-visible { outline: 2px solid #547d28; outline-offset: 2px; }
+
+:focus-visible {
+  outline: 2px solid #4d7c0f;
+  outline-offset: 2px;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, FileDown } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -378,7 +378,7 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                 type="range"
                 min="40"
                 max="75"
-                step="1"
+                step="0.5"
                 value={smfQuota}
                 onChange={(e) => setSmfQuota(parseFloat(e.target.value))}
                 className="w-full cursor-pointer"
@@ -473,7 +473,17 @@ export default function GovtConsole({ lang }: GovtConsoleProps) {
                     </span>
                   </div>
                   <p className="text-xs text-[#5e5c55]">{c.grievance_text}</p>
-                  {c.supporting_doc && /^[a-f0-9]{32}$/.test(c.supporting_doc) && <button className="control" onClick={()=>api.downloadEvidence(c.supporting_doc!).catch(e=>setPolicyError(e.message))}>Download evidence</button>}
+                  {c.supporting_doc && /^[a-f0-9]{32}$/.test(c.supporting_doc) && (
+                    <button
+                      className="control"
+                      onClick={() =>
+                        api.downloadEvidence(c.supporting_doc!).catch((e) => setTribunalError(e.message))
+                      }
+                    >
+                      <FileDown className="w-3.5 h-3.5" />
+                      <span>Download evidence</span>
+                    </button>
+                  )}
                   {c.govt_directive ? (
                     <div className="text-xs text-[#365314] bg-[#eef7d6] p-2.5 rounded-lg">
                       Directive: {c.govt_directive}

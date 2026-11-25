@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Play, ArrowUpRight, CheckCircle2 } from "lucide-react";
+import { Search, Play, ArrowUpRight, CheckCircle2, FileDown } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -360,16 +360,75 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
               )}
               {selectedAppDetail && (
                 <>
-                  <section className="bento-card p-5 space-y-3">
-                    <p className="font-medium">{selectedAppDetail.status.replaceAll("_"," ")} · Recommended ₹{selectedAppDetail.recommended_amount.toLocaleString("en-IN")}</p>
-                    {selectedAppDetail.review_reason && <p>{selectedAppDetail.review_reason}</p>}
-                    {selectedAppDetail.decision_note && <p>Officer’s note · {selectedAppDetail.decision_note}</p>}
-                    {["submitted","appealed","under_review"].includes(selectedAppDetail.status) &&
-                    <><label className="text-sm">Officer’s reason<textarea className="field" value={reviewNote} onChange={e=>setReviewNote(e.target.value)}/></label>
-                    <div className="flex flex-wrap gap-2">
-                      <button className="control" disabled={approvingSingle || reviewNote.trim().length<5} onClick={()=>handleReview(selectedAppDetail.id,"release")}>Release for allocation</button>
-                      <button className="control" disabled={approvingSingle || reviewNote.trim().length<5} onClick={()=>handleReview(selectedAppDetail.id,"reject")}>Reject with reason</button>
-                    </div></>}
+                  <section className="bento-card p-5 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium capitalize ${
+                            ["approved", "partial_approved"].includes(selectedAppDetail.status)
+                              ? "bg-[#eef7d6] text-[#365314]"
+                              : selectedAppDetail.status === "under_review"
+                                ? "bg-amber-100 text-amber-900"
+                                : selectedAppDetail.status === "rejected"
+                                  ? "bg-red-50 text-red-700"
+                                  : "bg-[#f5f5ee] text-[#5e5c55]"
+                          }`}
+                        >
+                          {selectedAppDetail.status.replaceAll("_", " ")}
+                        </span>
+                        <span className="text-xs text-[#8a877d]">
+                          Recommended{" "}
+                          <strong className="font-mono font-medium text-[#141513]">
+                            ₹{selectedAppDetail.recommended_amount.toLocaleString("en-IN")}
+                          </strong>
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-[#5e5c55]">
+                        Sanctioned ₹{selectedAppDetail.sanctioned_amount.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+
+                    {selectedAppDetail.review_reason && (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                        {selectedAppDetail.review_reason}
+                      </div>
+                    )}
+                    {selectedAppDetail.decision_note && (
+                      <div className="p-3 rounded-xl bg-[#fafaf6] border border-black/[0.06] text-xs text-[#141513]">
+                        Officer&apos;s note: {selectedAppDetail.decision_note}
+                      </div>
+                    )}
+
+                    {["submitted", "appealed", "under_review"].includes(selectedAppDetail.status) && (
+                      <div className="space-y-3 pt-1">
+                        <label className="block text-xs text-[#5e5c55]">
+                          Officer&apos;s written reason (min 5 characters)
+                          <textarea
+                            rows={2}
+                            className="field"
+                            placeholder="Record underwriting justification for release or rejection"
+                            value={reviewNote}
+                            onChange={(e) => setReviewNote(e.target.value)}
+                          />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="primary"
+                            disabled={approvingSingle || reviewNote.trim().length < 5}
+                            onClick={() => handleReview(selectedAppDetail.id, "release")}
+                          >
+                            Release for allocation
+                          </button>
+                          <button
+                            className="control"
+                            disabled={approvingSingle || reviewNote.trim().length < 5}
+                            onClick={() => handleReview(selectedAppDetail.id, "reject")}
+                          >
+                            Reject with reason
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </section>
                   {/* Card 1: Cash-Flow AreaChart */}
                   <div className="bento-card p-5 space-y-4 min-w-0">
@@ -477,26 +536,71 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
       )}
 
       {/* TAB 2: PORTFOLIO OPTIMIZER */}
-      {activeTab === "optimizer" && <div className="flex flex-wrap gap-3 items-center">
-        <span>Published policy v{policy?.id ?? "…"} · Modified sliders run a simulation.</span>
-        <button className="control" onClick={()=>api.getPolicyConfig().then(p=>{setPolicy(p);restorePolicy(p);}).catch(e=>setActionError(e.message))}>Use latest policy</button>
-        {optResult && <span role="status">Policy v{optResult.policy_version} · {optResult.simulation_only?"What-if only":optResult.status.replaceAll("_"," ")}</span>}
-        {actionError && <p role="alert">{actionError}</p>}{disburseSuccess && <p role="status">{disburseSuccess}</p>}
-      </div>}
       {activeTab === "optimizer" && (
         <div className="space-y-5">
           <div className="bento-card p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-[15px] font-medium text-[#141513]">Allocation Parameters (MILP)</h3>
-              <button
-                onClick={handleRunOptimizer}
-                disabled={optimizing || !policy}
-                className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium"
-              >
-                <Play className="w-3.5 h-3.5 text-[#d4f04c] fill-current" />
-                <span>{optimizing ? "Optimizing..." : "Run Optimizer"}</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-black/[0.06]">
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-[15px] font-medium text-[#141513]">Allocation Parameters (MILP)</h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-[#f5f5ee] text-[#5e5c55]">
+                    Published policy v{policy?.id ?? "…"}
+                  </span>
+                  {optResult && (
+                    <span
+                      role="status"
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
+                        optResult.simulation_only
+                          ? "bg-amber-100 text-amber-900"
+                          : "bg-[#eef7d6] text-[#365314]"
+                      }`}
+                    >
+                      {optResult.simulation_only ? "What-if simulation only" : optResult.status.replaceAll("_", " ")}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-[#8a877d]">
+                  Modifying policy sliders runs a non-committing simulation; restore the published policy to commit a batch.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  className="control"
+                  onClick={() =>
+                    api
+                      .getPolicyConfig()
+                      .then((p) => {
+                        setPolicy(p);
+                        restorePolicy(p);
+                      })
+                      .catch((e) => setActionError(e.message))
+                  }
+                >
+                  Restore latest policy
+                </button>
+                <button
+                  onClick={handleRunOptimizer}
+                  disabled={optimizing || !policy}
+                  className="flex items-center space-x-1.5 px-5 py-2 bg-[#141513] hover:bg-black/85 text-white rounded-full text-xs font-medium disabled:opacity-50"
+                >
+                  <Play className="w-3.5 h-3.5 text-[#d4f04c] fill-current" />
+                  <span>{optimizing ? "Optimizing..." : "Run Optimizer"}</span>
+                </button>
+              </div>
             </div>
+
+            {actionError && (
+              <div role="alert" className="p-3 bg-red-50 rounded-xl text-xs text-red-700">
+                {actionError}
+              </div>
+            )}
+            {disburseSuccess && (
+              <div role="status" className="p-3 bg-[#eef7d6] rounded-xl text-xs text-[#365314] flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{disburseSuccess}</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="space-y-2">
@@ -657,12 +761,22 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
 
               <div className="bento-card p-5 flex flex-wrap items-center justify-between gap-4">
                 <div className="text-xs text-[#5e5c55]">
-                  Approve batch of <strong className="text-[#141513]">{optResult.dss_approved_count}</strong> applicants and issue purpose-locked tranches
+                  {optResult.simulation_only ? (
+                    <span>
+                      Simulation selected <strong className="text-[#141513]">{optResult.dss_approved_count}</strong> applicants. Restore the published policy to commit disbursement.
+                    </span>
+                  ) : optResult.dss_approved_count === 0 ? (
+                    <span>No eligible pending applicants satisfy the active budget and policy constraints.</span>
+                  ) : (
+                    <span>
+                      Approve batch of <strong className="text-[#141513]">{optResult.dss_approved_count}</strong> applicants and issue purpose-locked tranches
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={handleDisburseBatch}
-                  disabled={disbursing || !optResult.run_id}
-                  className="px-5 py-2.5 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85"
+                  disabled={disbursing || !optResult.run_id || optResult.dss_approved_count === 0}
+                  className="px-5 py-2.5 bg-[#141513] text-[#d4f04c] rounded-full text-xs font-medium hover:bg-black/85 disabled:opacity-45 disabled:cursor-not-allowed"
                 >
                   {disbursing ? "Disbursing..." : "Approve & Disburse Batch"}
                 </button>
@@ -704,7 +818,17 @@ export default function BankWorkbench({ lang }: BankWorkbenchProps) {
                   </span>
                 </div>
                 <p className="text-xs text-[#5e5c55]">{g.grievance_text}</p>
-                {g.supporting_doc && /^[a-f0-9]{32}$/.test(g.supporting_doc) && <button className="control" onClick={()=>api.downloadEvidence(g.supporting_doc!).catch(e=>setActionError(e.message))}>Download evidence</button>}
+                {g.supporting_doc && /^[a-f0-9]{32}$/.test(g.supporting_doc) && (
+                  <button
+                    className="control"
+                    onClick={() =>
+                      api.downloadEvidence(g.supporting_doc!).catch((e) => setActionError(e.message))
+                    }
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>Download evidence</span>
+                  </button>
+                )}
                 {g.bank_response ? (
                   <div className="text-xs text-[#365314] bg-[#eef7d6] p-2.5 rounded-lg">
                     Response: {g.bank_response}
