@@ -117,79 +117,81 @@ export default function Header({
         </div>
 
         {/* Main Nav Row */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             {/* Logo */}
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
-                <Sprout className="w-6 h-6 text-white" strokeWidth={1.75} />
+            <div className="flex items-center space-x-2.5 shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
+                <Sprout className="w-5 h-5 text-white" strokeWidth={1.75} />
               </div>
               <div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-lg font-bold tracking-tight text-white">
+                  <span className="text-base font-bold tracking-tight text-white">
                     {t(lang, "app_title")}
                   </span>
-                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
                     v3.0 TS
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">{t(lang, "app_subtitle")}</p>
+                <p className="text-[11px] text-slate-400 max-w-[230px] truncate" title={t(lang, "app_subtitle")}>
+                  {t(lang, "app_subtitle")}
+                </p>
               </div>
             </div>
 
             {/* Role Tabs */}
-            <nav className="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 overflow-x-auto">
+            <nav className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
               <button
                 onClick={() => setActiveRole("farmer")}
-                className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   activeRole === "farmer"
                     ? "bg-emerald-700 text-white"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                 }`}
               >
-                <Sprout className="w-4 h-4" strokeWidth={1.5} />
+                <Sprout className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>{t(lang, "nav_farmer")}</span>
               </button>
 
               <button
                 onClick={() => setActiveRole("bank")}
-                className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   activeRole === "bank"
                     ? "bg-blue-700 text-white"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                 }`}
               >
-                <Building2 className="w-4 h-4" strokeWidth={1.5} />
+                <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>{t(lang, "nav_bank")}</span>
               </button>
 
               <button
                 onClick={() => setActiveRole("govt")}
-                className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   activeRole === "govt"
                     ? "bg-amber-700 text-white"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                 }`}
               >
-                <Landmark className="w-4 h-4" strokeWidth={1.5} />
+                <Landmark className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>{t(lang, "nav_govt")}</span>
               </button>
 
               <button
                 onClick={() => setActiveRole("guide")}
-                className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   activeRole === "guide"
                     ? "bg-slate-700 text-white"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                 }`}
               >
-                <BookOpen className="w-4 h-4" strokeWidth={1.5} />
+                <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>{t(lang, "nav_guide")}</span>
               </button>
             </nav>
 
             {/* Persona Switcher & Reset */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 shrink-0">
               <select
                 value={selectedDemoUser?.username || ""}
                 onChange={(e) => {
@@ -201,7 +203,7 @@ export default function Header({
                     else if (u.role === "govt_auditor") setActiveRole("govt");
                   }
                 }}
-                className="text-xs bg-slate-800 border border-slate-700 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer max-w-[240px]"
+                className="text-xs bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer max-w-[180px]"
                 title="Switch Demo Persona"
               >
                 <option value="" disabled>

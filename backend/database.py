@@ -1,56 +1,136 @@
 """
-KrishiSetu DSS - Relational Database Schema & Helper Methods
+KrishiSetu DSS - Relational Database Schema & Dual-Engine Adapter (Supabase PostgreSQL + SQLite)
 Aligned with Course Database-1.pdf and dms624.pdf specifications.
-8 Core Tables:
-1. users_and_roles
-2. farmer_profiles
-3. land_and_allied_assets
-4. existing_liabilities
-5. loan_applications
-6. dss_evaluations
-7. fund_tranches_and_usage
-8. grievances_and_policy_logs
+Automatically uses Supabase PostgreSQL when DATABASE_URL is set, or SQLite locally.
 """
 
 import sqlite3
-import json
 import os
-from typing import List, Dict, Any, Optional
+import re
+from typing import Any, Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "krishisetu.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+
+class DualRow(dict):
+    """Dict subclass that also supports integer positional indexing like sqlite3.Row."""
+
+    def __init__(self, mapping):
+        super().__init__(mapping)
+        self._vals = list(mapping.values())
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._vals[key]
+        return super().__getitem__(key)
+
+
+class PgCursorAdapter:
+    """Wraps psycopg2 RealDictCursor to accept SQLite-style `?` placeholders and track `lastrowid`."""
+
+    def __init__(self, cursor):
+        self._cur = cursor
+        self.lastrowid: Optional[int] = None
+
+    def execute(self, query: str, params: Any = None):
+        pg_query = query.replace("?", "%s")
+        is_insert = pg_query.lstrip().upper().startswith("INSERT INTO")
+        has_returning = "RETURNING" in pg_query.upper()
+        if is_insert and not has_returning:
+            pg_query = pg_query.rstrip().rstrip(";") + " RETURNING id;"
+
+        if params is not None:
+            self._cur.execute(pg_query, params)
+        else:
+            self._cur.execute(pg_query)
+
+        if is_insert and self._cur.description:
+            row = self._cur.fetchone()
+            if row:
+                self.lastrowid = row["id"] if isinstance(row, dict) else row[0]
+        return self
+
+    def executemany(self, query: str, seq_of_params):
+        pg_query = query.replace("?", "%s")
+        self._cur.executemany(pg_query, seq_of_params)
+        return self
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return DualRow(row) if row is not None else None
+
+    def fetchall(self):
+        return [DualRow(r) for r in self._cur.fetchall()]
+
+    def __getattr__(self, name: str):
+        return getattr(self._cur, name)
+
+
+class PgConnectionAdapter:
+    """Wraps psycopg2 connection with SQLite-compatible execute() and cursor() methods."""
+
+    def __init__(self, dsn: str):
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def cursor(self) -> PgCursorAdapter:
+        return PgCursorAdapter(self._conn.cursor())
+
+    def execute(self, query: str, params: Any = None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
 
 def get_db_connection():
+    if DATABASE_URL:
+        return PgConnectionAdapter(DATABASE_URL)
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    # Enable foreign keys
-    cursor.execute("PRAGMA foreign_keys = ON;")
-    
-    # 1. users_and_roles
-    cursor.execute("""
+
+    if not DATABASE_URL:
+        cursor.execute("PRAGMA foreign_keys = ON;")
+
+    pk = "BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    ts = "TIMESTAMPTZ DEFAULT NOW()" if DATABASE_URL else "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+    real_t = "DOUBLE PRECISION" if DATABASE_URL else "REAL"
+    bool_t = "BOOLEAN" if DATABASE_URL else "BOOLEAN"
+    bool_true = "TRUE" if DATABASE_URL else "1"
+    bool_false = "FALSE" if DATABASE_URL else "0"
+
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS users_and_roles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {pk},
         username TEXT UNIQUE NOT NULL,
         role TEXT NOT NULL CHECK(role IN ('farmer', 'bank_officer', 'govt_auditor', 'admin')),
         full_name TEXT NOT NULL,
         phone TEXT,
         district TEXT NOT NULL,
         branch_or_dept TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at {ts}
     );
     """)
 
-    # 2. farmer_profiles
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS farmer_profiles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        id {pk},
+        user_id INTEGER REFERENCES users_and_roles(id) ON DELETE SET NULL,
         farmer_uid TEXT UNIQUE NOT NULL,
         pmkisan_id TEXT UNIQUE,
         full_name TEXT NOT NULL,
@@ -59,164 +139,150 @@ def init_db():
         social_category TEXT NOT NULL CHECK(social_category IN ('GEN', 'OBC', 'SC', 'ST', 'Minority', 'PWD', 'Women')),
         education TEXT,
         years_farming INTEGER DEFAULT 5,
-        is_pmjdy BOOLEAN DEFAULT 1,
-        is_pmsby BOOLEAN DEFAULT 1,
-        is_pmjjby BOOLEAN DEFAULT 1,
+        is_pmjdy {bool_t} DEFAULT {bool_true},
+        is_pmsby {bool_t} DEFAULT {bool_true},
+        is_pmjjby {bool_t} DEFAULT {bool_true},
         village TEXT NOT NULL,
         district TEXT NOT NULL,
         state TEXT DEFAULT 'Uttar Pradesh',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users_and_roles(id) ON DELETE SET NULL
+        created_at {ts}
     );
     """)
 
-    # 3. land_and_allied_assets
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS land_and_allied_assets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        farmer_id INTEGER NOT NULL,
+        id {pk},
+        farmer_id INTEGER NOT NULL REFERENCES farmer_profiles(id) ON DELETE CASCADE,
         survey_khasra_no TEXT NOT NULL,
         ownership_type TEXT NOT NULL CHECK(ownership_type IN ('owned', 'registered_lease', 'oral_lease', 'sharecropper')),
-        area_acres REAL NOT NULL,
-        area_hectares REAL NOT NULL,
-        irrigated_pct REAL DEFAULT 100.0,
+        area_acres {real_t} NOT NULL,
+        area_hectares {real_t} NOT NULL,
+        irrigated_pct {real_t} DEFAULT 100.0,
         irrigation_source TEXT NOT NULL CHECK(irrigation_source IN ('Drip', 'Sprinkler', 'Canal', 'Well', 'Dry')),
-        land_fragmentation_flag BOOLEAN DEFAULT 0,
-        distance_to_mandi_km REAL DEFAULT 5.0,
+        land_fragmentation_flag {bool_t} DEFAULT {bool_false},
+        distance_to_mandi_km {real_t} DEFAULT 5.0,
         livestock_count INTEGER DEFAULT 0,
         fisheries_count INTEGER DEFAULT 0,
-        movable_asset_val_k REAL DEFAULT 0.0,
-        immovable_asset_val_l REAL DEFAULT 0.0,
-        net_worth REAL DEFAULT 0.0,
+        movable_asset_val_k {real_t} DEFAULT 0.0,
+        immovable_asset_val_l {real_t} DEFAULT 0.0,
+        net_worth {real_t} DEFAULT 0.0,
         panchayat_cert_doc TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (farmer_id) REFERENCES farmer_profiles(id) ON DELETE CASCADE
+        created_at {ts}
     );
     """)
 
-    # 4. existing_liabilities
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS existing_liabilities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        farmer_id INTEGER NOT NULL,
+        id {pk},
+        farmer_id INTEGER NOT NULL REFERENCES farmer_profiles(id) ON DELETE CASCADE,
         lender_name TEXT NOT NULL,
         lender_type TEXT NOT NULL CHECK(lender_type IN ('commercial_bank', 'cooperative', 'moneylender_informal')),
-        outstanding_balance_m REAL DEFAULT 0.0,
+        outstanding_balance_m {real_t} DEFAULT 0.0,
         overdue_days INTEGER DEFAULT 0,
-        is_npa BOOLEAN DEFAULT 0,
-        is_wilful_default BOOLEAN DEFAULT 0,
-        guarantor_liability REAL DEFAULT 0.0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (farmer_id) REFERENCES farmer_profiles(id) ON DELETE CASCADE
+        is_npa {bool_t} DEFAULT {bool_false},
+        is_wilful_default {bool_t} DEFAULT {bool_false},
+        guarantor_liability {real_t} DEFAULT 0.0,
+        created_at {ts}
     );
     """)
 
-    # 5. loan_applications
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS loan_applications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {pk},
         application_no TEXT UNIQUE NOT NULL,
-        farmer_id INTEGER NOT NULL,
+        farmer_id INTEGER NOT NULL REFERENCES farmer_profiles(id) ON DELETE CASCADE,
         facility_type TEXT NOT NULL CHECK(facility_type IN ('Crop KCC', 'Flexi KCC', 'Allied KCC', 'Agri Term Loan')),
-        requested_amount REAL NOT NULL,
+        requested_amount {real_t} NOT NULL,
         season TEXT DEFAULT 'Kharif',
         primary_crop TEXT NOT NULL,
         secondary_crop TEXT,
         marketing_tieup TEXT NOT NULL CHECK(marketing_tieup IN ('Direct', 'Cooperative', 'Government_Procurement', 'Corporate_Contract', 'None')),
-        pmfby_optin BOOLEAN DEFAULT 1,
+        pmfby_optin {bool_t} DEFAULT {bool_true},
         status TEXT DEFAULT 'submitted' CHECK(status IN ('submitted', 'under_review', 'approved', 'partial_approved', 'rejected', 'appealed')),
         bank_assigned TEXT DEFAULT 'State Bank of India',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (farmer_id) REFERENCES farmer_profiles(id) ON DELETE CASCADE
+        created_at {ts},
+        updated_at {ts}
     );
     """)
 
-    # 6. dss_evaluations
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS dss_evaluations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER UNIQUE NOT NULL,
+        id {pk},
+        application_id INTEGER UNIQUE NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
         farmer_classification TEXT NOT NULL,
         decision_tree_path TEXT NOT NULL,
-        scale_of_finance_limit REAL NOT NULL,
-        sanctioned_amount REAL NOT NULL,
-        pd_score REAL NOT NULL,
-        lgd_score REAL NOT NULL,
-        dscr_ratio REAL NOT NULL,
-        expected_revenue REAL NOT NULL,
-        drought_stress_revenue REAL NOT NULL,
-        equity_priority_score REAL NOT NULL,
+        scale_of_finance_limit {real_t} NOT NULL,
+        sanctioned_amount {real_t} NOT NULL,
+        pd_score {real_t} NOT NULL,
+        lgd_score {real_t} NOT NULL,
+        dscr_ratio {real_t} NOT NULL,
+        expected_revenue {real_t} NOT NULL,
+        drought_stress_revenue {real_t} NOT NULL,
+        equity_priority_score {real_t} NOT NULL,
         shap_reasons TEXT NOT NULL,
-        allocated_in_batch BOOLEAN DEFAULT 0,
-        evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE CASCADE
+        allocated_in_batch {bool_t} DEFAULT {bool_false},
+        evaluated_at {ts}
     );
     """)
 
-    # 7. fund_tranches_and_usage
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS fund_tranches_and_usage (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER NOT NULL,
+        id {pk},
+        application_id INTEGER NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
         tranche_no INTEGER NOT NULL,
         tranche_name TEXT NOT NULL,
-        percentage REAL NOT NULL,
-        amount REAL NOT NULL,
+        percentage {real_t} NOT NULL,
+        amount {real_t} NOT NULL,
         status TEXT DEFAULT 'locked' CHECK(status IN ('locked', 'disbursed', 'redeemed')),
         voucher_code TEXT UNIQUE,
         qr_payload TEXT,
         merchant_name TEXT,
-        redemption_timestamp TIMESTAMP,
+        redemption_timestamp {ts},
         geo_proof_photo TEXT,
-        geo_lat REAL,
-        geo_long REAL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE CASCADE
+        geo_lat {real_t},
+        geo_long {real_t},
+        created_at {ts}
     );
     """)
 
-    # 8. grievances_and_policy_logs
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS grievances_and_policy_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER,
-        farmer_id INTEGER,
+        id {pk},
+        application_id INTEGER REFERENCES loan_applications(id) ON DELETE CASCADE,
+        farmer_id INTEGER REFERENCES farmer_profiles(id) ON DELETE CASCADE,
         category TEXT NOT NULL CHECK(category IN ('Incorrect land area', 'Unfair rejection', 'Collateral demanded under 2L', 'Delayed disbursal >14 days', 'Policy_Update', 'Other')),
         grievance_text TEXT NOT NULL,
         supporting_doc TEXT,
         bank_response TEXT,
         resolution_status TEXT DEFAULT 'open' CHECK(resolution_status IN ('open', 'resolved', 'escalated')),
-        sla_deadline TIMESTAMP,
+        sla_deadline {ts},
         govt_directive TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (farmer_id) REFERENCES farmer_profiles(id) ON DELETE CASCADE
+        created_at {ts},
+        updated_at {ts}
     );
     """)
 
-    # Government Policy Parameters Table (Versioned)
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS govt_policy_parameters (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        smf_minimum_quota REAL DEFAULT 0.556,
-        govt_first_loss_guarantee REAL DEFAULT 0.35,
-        interest_subvention_pct REAL DEFAULT 3.0,
-        miss_base_rate REAL DEFAULT 7.0,
-        collateral_free_threshold REAL DEFAULT 200000.0,
-        collateral_free_tieup_threshold REAL DEFAULT 300000.0,
-        flexi_kcc_min REAL DEFAULT 10000.0,
-        flexi_kcc_max REAL DEFAULT 50000.0,
-        bank_max_npa_ceiling REAL DEFAULT 0.045,
+        id {pk},
+        smf_minimum_quota {real_t} DEFAULT 0.556,
+        govt_first_loss_guarantee {real_t} DEFAULT 0.35,
+        interest_subvention_pct {real_t} DEFAULT 3.0,
+        miss_base_rate {real_t} DEFAULT 7.0,
+        collateral_free_threshold {real_t} DEFAULT 200000.0,
+        collateral_free_tieup_threshold {real_t} DEFAULT 300000.0,
+        flexi_kcc_min {real_t} DEFAULT 10000.0,
+        flexi_kcc_max {real_t} DEFAULT 50000.0,
+        bank_max_npa_ceiling {real_t} DEFAULT 0.045,
         updated_by TEXT DEFAULT 'RBI / Ministry of Agriculture',
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at {ts}
     );
     """)
 
-    # Insert initial default policy if empty
-    cursor.execute("SELECT COUNT(*) FROM govt_policy_parameters;")
-    if cursor.fetchone()[0] == 0:
+    cursor.execute("SELECT COUNT(*) AS cnt FROM govt_policy_parameters;")
+    row = cursor.fetchone()
+    cnt = row["cnt"] if isinstance(row, dict) else row[0]
+    if cnt == 0:
         cursor.execute("""
         INSERT INTO govt_policy_parameters (
             smf_minimum_quota, govt_first_loss_guarantee, interest_subvention_pct,
@@ -228,6 +294,7 @@ def init_db():
     conn.commit()
     conn.close()
     print("KrishiSetu Database initialized successfully.")
+
 
 if __name__ == "__main__":
     init_db()

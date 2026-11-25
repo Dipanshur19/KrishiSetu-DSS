@@ -359,8 +359,8 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
         INSERT INTO farmer_profiles (
             farmer_uid, pmkisan_id, full_name, phone, gender, social_category,
             education, years_farming, is_pmjdy, is_pmsby, is_pmjjby, village, district
-        ) VALUES (?, ?, ?, ?, ?, ?, 'Intermediate', 8, 1, 1, 1, ?, ?);
-        """, (farmer_uid, pmkisan_id, app_data.full_name, app_data.phone, app_data.gender, app_data.social_category, app_data.village, app_data.district))
+        ) VALUES (?, ?, ?, ?, ?, ?, 'Intermediate', 8, ?, ?, ?, ?, ?);
+        """, (farmer_uid, pmkisan_id, app_data.full_name, app_data.phone, app_data.gender, app_data.social_category, True, True, True, app_data.village, app_data.district))
         farmer_id = cursor.lastrowid
 
     # 2. Insert Land
@@ -383,9 +383,9 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
         cursor.execute("""
         INSERT INTO existing_liabilities (
             farmer_id, lender_name, lender_type, outstanding_balance_m, overdue_days, is_npa, is_wilful_default
-        ) VALUES (?, ?, ?, ?, 60, 1, 0);
+        ) VALUES (?, ?, ?, ?, 60, ?, ?);
         """, (farmer_id, "Informal Village Lender" if app_data.is_informal_debt_only else "Local Commercial Bank",
-              lender_type, app_data.existing_debt))
+              lender_type, app_data.existing_debt, True, False))
         liabilities_list.append({
             "lender_type": lender_type, "outstanding_balance_m": app_data.existing_debt,
             "overdue_days": 60, "is_npa": 1, "is_wilful_default": 0
@@ -401,7 +401,7 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
     ) VALUES (?, ?, ?, ?, 'Rabi', ?, ?, ?, ?, 'submitted', ?);
     """, (app_no, farmer_id, app_data.facility_type, app_data.requested_amount,
           app_data.primary_crop, app_data.secondary_crop, app_data.marketing_tieup,
-          1 if app_data.pmfby_optin else 0, app_data.bank_assigned))
+          bool(app_data.pmfby_optin), app_data.bank_assigned))
     app_id = cursor.lastrowid
 
     # 5. Run Decision Tree, Forecast, and Risk Models
@@ -441,13 +441,13 @@ def create_farmer_application(app_data: FarmerApplicationCreate):
         scale_of_finance_limit, sanctioned_amount, pd_score, lgd_score,
         dscr_ratio, expected_revenue, drought_stress_revenue,
         equity_priority_score, shap_reasons, allocated_in_batch
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, (
         app_id, dt_res["farmer_category"], json.dumps(dt_res["steps_log"]),
         dt_res["scale_of_finance_limit"], sanction_amt,
         risk_res["pd_score"], risk_res["lgd_score"],
         fc_res["dscr_ratio"], fc_res["expected_net_revenue"], fc_res["drought_stress_revenue"],
-        risk_res["equity_priority_score"], json.dumps(risk_res["shap_reasons"])
+        risk_res["equity_priority_score"], json.dumps(risk_res["shap_reasons"]), True
     ))
 
     # Generate the 3 purpose-locked tranches
@@ -702,7 +702,7 @@ def disburse_optimized_batch(req: DisburseBatchRequest):
     for app_id in req.application_ids:
         # Mark application approved
         cursor.execute("UPDATE loan_applications SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (app_id,))
-        cursor.execute("UPDATE dss_evaluations SET allocated_in_batch = 1 WHERE application_id = ?;", (app_id,))
+        cursor.execute("UPDATE dss_evaluations SET allocated_in_batch = ? WHERE application_id = ?;", (True, app_id))
         
         # Check if tranches exist, else generate
         existing_tranches = cursor.execute("SELECT COUNT(*) FROM fund_tranches_and_usage WHERE application_id = ?", (app_id,)).fetchone()[0]

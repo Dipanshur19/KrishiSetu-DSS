@@ -98,6 +98,20 @@ export default function FarmerPortal({ demoUser, lang }: FarmerPortalProps) {
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    if (demoUser && demoUser.role === "farmer") {
+      setFormData((prev) => ({
+        ...prev,
+        full_name: demoUser.full_name,
+        phone: demoUser.phone || prev.phone,
+        district: demoUser.district || prev.district,
+      }));
+      const targetId =
+        demoUser.username === "farmer_sunita" ? 2 : demoUser.username === "farmer_kallu" ? 3 : 1;
+      setOutcomeAppId(targetId);
+    }
+  }, [demoUser]);
+
   const loadOutcome = (id: number) => {
     setLoadingOutcome(true);
     api.getApplicationOutcome(id)

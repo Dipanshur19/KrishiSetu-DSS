@@ -122,9 +122,9 @@ def seed_database():
             farmer_uid, pmkisan_id, name, phone, gender, social_category,
             random.choice(["Primary", "Middle School", "High School", "Intermediate", "Literate (Non-formal)"]),
             random.randint(3, 35),
-            1, # 98% PMJDY
-            1 if random.random() < 0.85 else 0,
-            1 if random.random() < 0.75 else 0,
+            True, # 98% PMJDY
+            random.random() < 0.85,
+            random.random() < 0.75,
             village, district
         ))
         farmer_id = cursor.lastrowid
@@ -181,7 +181,7 @@ def seed_database():
         """, (
             farmer_id, khasra_no, ownership_type, area_acres, area_ha,
             100.0 if irrigation_source != "Dry" else 0.0, irrigation_source,
-            1 if random.random() < 0.30 else 0,
+            random.random() < 0.30,
             round(random.uniform(2.5, 32.0), 1),
             livestock_count, 0,
             movable_asset_k, immovable_asset_l, net_worth
@@ -207,7 +207,7 @@ def seed_database():
             cursor.execute("""
             INSERT INTO existing_liabilities (farmer_id, lender_name, lender_type, outstanding_balance_m, overdue_days, is_npa, is_wilful_default, guarantor_liability)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], 0, 0, 0, 0.0))
+            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], 0, False, False, 0.0))
             liabilities_list.append(liab)
         elif r_debt < 0.90:
             # Informal village moneylender debt (distressed, candidate for Debt-Swap!)
@@ -220,11 +220,11 @@ def seed_database():
             cursor.execute("""
             INSERT INTO existing_liabilities (farmer_id, lender_name, lender_type, outstanding_balance_m, overdue_days, is_npa, is_wilful_default, guarantor_liability)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], liab["overdue_days"], 1, 0, 0.0))
+            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], liab["overdue_days"], True, False, 0.0))
             liabilities_list.append(liab)
         else:
             # Commercial bank loan with minor overdue or clean
-            is_npa = 1 if random.random() < 0.25 else 0
+            is_npa = random.random() < 0.25
             outstanding = round(random.uniform(25000, 120000), 2)
             liab = {
                 "farmer_id": farmer_id, "lender_name": "Punjab National Bank",
@@ -234,7 +234,7 @@ def seed_database():
             cursor.execute("""
             INSERT INTO existing_liabilities (farmer_id, lender_name, lender_type, outstanding_balance_m, overdue_days, is_npa, is_wilful_default, guarantor_liability)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], liab["overdue_days"], is_npa, 0, 0.0))
+            """, (farmer_id, liab["lender_name"], liab["lender_type"], liab["outstanding_balance_m"], liab["overdue_days"], is_npa, False, 0.0))
             liabilities_list.append(liab)
 
         # ---------------------------------------------------------------------
@@ -262,7 +262,7 @@ def seed_database():
             ["Cooperative", "Government_Procurement", "Corporate_Contract", "Direct", "None"],
             weights=[0.35, 0.25, 0.15, 0.15, 0.10]
         )[0]
-        pmfby_optin = 1 if random.random() < 0.88 else 0
+        pmfby_optin = random.random() < 0.88
         bank_assigned = random.choice(BANKS)
 
         cursor.execute("""
@@ -319,13 +319,13 @@ def seed_database():
             scale_of_finance_limit, sanctioned_amount, pd_score, lgd_score,
             dscr_ratio, expected_revenue, drought_stress_revenue,
             equity_priority_score, shap_reasons, allocated_in_batch
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, (
             app_id, dt_res["farmer_category"], json.dumps(dt_res["steps_log"]),
             dt_res["scale_of_finance_limit"], sanction_amt,
             risk_res["pd_score"], risk_res["lgd_score"],
             fc_res["dscr_ratio"], fc_res["expected_net_revenue"], fc_res["drought_stress_revenue"],
-            risk_res["equity_priority_score"], json.dumps(risk_res["shap_reasons"])
+            risk_res["equity_priority_score"], json.dumps(risk_res["shap_reasons"]), False
         ))
 
         # For the first 35 applications, mark them as 'approved' with generated tranches so the demo has ready vouchers
